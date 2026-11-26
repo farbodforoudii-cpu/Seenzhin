@@ -201,3 +201,29 @@ main { max-width: 980px; margin: 0 auto; padding: 4px 16px 24px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* phase 2: analysis, market */
+.btn.small { flex: none; min-height: 34px; padding: 0 14px; font-size: 13px; border-radius: 10px; }
+.banner.market { align-items: center; }
+.banner.market .btn { margin-inline-start: auto; }
+.link { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.mkt { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 13.5px; }
+.formula { margin: 0; padding: 10px 12px; background: var(--surface-2); border-radius: 12px; font-weight: 600; font-size: 14px; line-height: 1.9; }
+.kpi { font-size: 26px; font-weight: 800; letter-spacing: -.4px; direction: rtl; display: block; }
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.kpis .kpi { font-size: 20px; }
+.kpis small { color: var(--muted); font-size: 12px; }
+.bars { display: grid; gap: 12px; }
+.bl { display: flex; flex-direction: column; }
+.bl small { color: var(--muted); font-size: 12px; }
+.track { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin-top: 4px; }
+.track span { display: block; height: 100%; background: var(--accent); border-radius: 4px; transform-origin: right; animation: grow .7s var(--ease) both; }
+@keyframes grow { from { transform: scaleX(0); } }
+.ladder { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.ladder b { min-width: 48px; }
+.ladder span { display: flex; gap: 6px; align-items: center; }
+.ladder i { font-style: normal; background: var(--surface-2); padding: 2px 8px; border-radius: 8px; font-size: 12.5px; }
+.ladder em { font-style: normal; color: var(--muted); }
+.ladder.bad i { background: color-mix(in srgb, var(--danger) 14%, var(--surface-2)); }
+.ladder small { color: var(--danger); width: 100%; font-size: 12px; }
+.row2 { width: 100%; text-align: start; }

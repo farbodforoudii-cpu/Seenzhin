@@ -48,6 +48,7 @@ export function defaultSettings() {
     pricesAt: { silver: null, gold: null },
     suppliers: { silver: 'self', gold: 'self', bronze: 'workshop' },
     factors,
+    markup: null, // material factor on metal + stones
     rounding: 0,
   };
 }
@@ -96,17 +97,25 @@ export function price(p, settings) {
   if (inv == null) missing.push({ key: 'invoice', text: 'مبلغ فاکتور کارگاه را وارد کنید' });
   else lines.push({ label: 'فاکتور کارگاه', how: null, value: inv });
 
-  // 4) design value as a level factor
+  // 4) Expensive materials (metal we supply + stones) take a small material factor; the workshop work takes the
+  // level factor that carries Servin's design value. Pattern used by independent jewellers (Metalsmith Society):
+  // a 2-2.5× markup on gold would price the piece out of its market. See DECISIONS §5.
+  const material = metal + stone;
+  const markup = num(settings.markup);
+  if (material > 0 && markup == null) missing.push({ key: 'markup', text: 'ضریب متریال در تنظیمات وارد نشده است' });
   const factor = formula && p.level ? num(settings.factors[formula][p.level]) : null;
   if (formula && p.level && factor == null) {
     missing.push({ key: `factor:${formula}:${p.level}`, text: `ضریب «${levelOf(p.level).name}» برای فرمول ${FORMULAS[formula].name} در تنظیمات وارد نشده است` });
   }
 
-  const cost = missing.some(m => ['weight', 'invoice', 'material'].includes(m.key) || m.key.startsWith('price:')) ? null : metal + stone + (inv || 0);
-  const internal = cost != null && factor != null ? cost * factor : null;
+  const costKnown = !missing.some(m => ['weight', 'invoice', 'material'].includes(m.key) || m.key.startsWith('price:'));
+  const cost = costKnown ? material + (inv || 0) : null;
+  const materialPart = costKnown && (material === 0 || markup != null) ? material * (material ? markup : 0) : null;
+  const workPart = costKnown && factor != null ? (inv || 0) * factor : null;
+  const internal = materialPart != null && workPart != null ? materialPart + workPart : null;
   const step = settings.rounding || 0;
   const final = internal == null ? null : step ? Math.ceil(internal / step) * step : Math.round(internal);
-  return { formula, lines, cost, factor, internal, step, final, missing, complete: final != null };
+  return { formula, lines, cost, material, invoice: inv, markup, factor, materialPart, workPart, internal, step, final, missing, complete: final != null };
 }
 
 // Products whose saved price no longer matches today's formula (metal price or factor changed).
@@ -129,6 +138,7 @@ export function setupSteps(settings, products) {
   const anyFactor = Object.values(settings.factors).some(l => Object.values(l).some(v => v != null));
   return [
     { id: 'silver', text: 'قیمت روز هر گرم نقره را وارد کنید', done: settings.prices.silver != null, go: 'settings' },
+    { id: 'markup', text: 'ضریب متریال را وارد کنید', done: settings.markup != null, go: 'settings' },
     { id: 'factors', text: 'ضریب سطح‌ها را وارد کنید', done: anyFactor, go: 'settings' },
     { id: 'first', text: 'اولین محصول را ثبت کنید', done: products.length > 0, go: 'price' },
   ];

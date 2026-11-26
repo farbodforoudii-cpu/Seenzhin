@@ -4,8 +4,9 @@ import {
   defaultSettings, catOf, formulaOf, matOf, levelOf, supplierOf, price, drifted, setupSteps,
 } from './model.js';
 import { fmt, fmtDec, iso, toman, parseNum, esc, faDate, faDigits } from './format.js';
+import { analyse, suggestInvoice, marketGap, shownPrice } from './analysis.js';
 
-const S = { settings: null, products: [], tab: 'catalog', filter: 'all', draft: null };
+const S = { settings: null, products: [], tab: 'catalog', filter: 'all', draft: null, market: null };
 const urls = new Map(); // photo id -> object URL
 const $ = (sel, el = document) => el.querySelector(sel);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -18,6 +19,7 @@ async function boot() {
   for (const ph of await db.all('photos')) urls.set(ph.id, URL.createObjectURL(ph.blob));
   S.draft = newDraft();
   requestPersistence();
+  loadMarket();
   bindGlobal();
   render();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -26,10 +28,25 @@ async function boot() {
 const newDraft = () => ({ cat: null, sub: null, level: null, title: '', material: null, weight: null, stone: null, invoice: null, w: null, h: null, status: 'available', note: '', photos: [], _added: [] });
 const saveSettings = () => db.set('settings', S.settings);
 
+// Today's silver (999) and 18k gold per gram in toman, from hesab-man's tgju feed on the same GitHub Pages site.
+// Only a suggestion: Servin decides whether to use it. Offline or unavailable: the app works without it.
+async function loadMarket() {
+  try {
+    const r = await fetch('/hesab-man/data/prices.json', { cache: 'no-store' });
+    if (!r.ok) return;
+    const M = await r.json();
+    if (!M.now || !M.now.silver) return;
+    S.market = { silver: M.now.silver, gold: M.now.gold, at: M.at };
+    if (S.tab === 'catalog' || S.tab === 'settings') render();
+  } catch { /* offline */ }
+}
+const MARKET_NAME = { silver: 'نقرهٔ ۹۹۹', gold: 'طلای ۱۸ عیار' };
+
 // ---------- shell ----------
 const TABS = [
   { id: 'catalog', name: 'کاتالوگ', icon: '<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/>' },
   { id: 'price', name: 'قیمت‌گذاری', icon: '<path d="M4 12.5 11.5 5H19v7.5L11.5 20z"/><circle cx="15.3" cy="8.7" r="1.4"/>' },
+  { id: 'analysis', name: 'تحلیل', icon: '<path d="M4 20h16"/><path d="M7 16v-5M12 16V6M17 16v-8"/>' },
   { id: 'settings', name: 'تنظیمات', icon: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>' },
 ];
 
@@ -39,7 +56,7 @@ function render() {
   $('#tabs').innerHTML = TABS.map(x => `<button class="tab ${x.id === S.tab ? 'on' : ''}" data-tab="${x.id}" aria-label="${x.name}">
     <svg viewBox="0 0 24 24" aria-hidden="true">${x.icon}</svg><span>${x.name}</span></button>`).join('');
   const v = $('#view');
-  v.innerHTML = S.tab === 'catalog' ? catalogHTML() : S.tab === 'price' ? editorHTML(S.draft, 'new') : settingsHTML();
+  v.innerHTML = S.tab === 'catalog' ? catalogHTML() : S.tab === 'price' ? editorHTML(S.draft, 'new') : S.tab === 'analysis' ? analysisHTML() : settingsHTML();
   if (S.tab === 'price') refreshPrice(v, S.draft);
   stagger(v);
 }
@@ -62,9 +79,14 @@ function catalogHTML() {
   const list = S.products.filter(p => S.filter === 'all' || p.cat === S.filter);
   let h = '';
   if (steps.some(s => !s.done)) {
-    h += `<section class="card setup"><h2>شروع کار</h2><p class="muted">با پرکردن این سه قدم، سینژین آمادهٔ قیمت‌گذاری می‌شود.</p><ol>
+    h += `<section class="card setup"><h2>شروع کار</h2><p class="muted">با پرکردن این قدم‌ها، سینژین آمادهٔ قیمت‌گذاری می‌شود.</p><ol>
       ${steps.map(s => `<li class="${s.done ? 'done' : ''}"><button class="row" data-go="${s.go}"><span class="tick">${s.done ? '✓' : ''}</span><span>${s.text}</span><span class="chev">‹</span></button></li>`).join('')}
     </ol></section>`;
+  }
+  for (const g of marketGap(S.settings, S.market)) {
+    h += `<div class="card banner market"><span class="dot"></span><span><b>${MARKET_NAME[g.id]} در بازار ${iso(faDigits(Math.abs(Math.round(g.pct * 100))) + '٪')} ${g.pct > 0 ? 'گران‌تر' : 'ارزان‌تر'} از قیمت ثبت‌شده است.</b><br>
+      <span class="muted">بازار امروز ${toman(g.market)}، ثبت‌شده ${toman(g.saved)} (هر گرم). درصد = بازار ÷ ثبت‌شده − ۱.</span></span>
+      <button class="btn small" data-usemarket="${g.id}">استفاده</button></div>`;
   }
   if (drift.length) {
     h += `<button class="card banner" data-open="drift"><span class="dot"></span><span><b>قیمت ${iso(faDigits(drift.length))} محصول با قیمت روز فرق دارد.</b><br><span class="muted">برای بررسی و تأیید بزنید.</span></span><span class="chev">‹</span></button>`;
@@ -118,7 +140,7 @@ function editorHTML(d, mode) {
   h += `<section class="card"><h3><span class="n">۳</span>متریال و هزینه‌ها</h3>${chips('material', MATERIALS, d.material)}
     ${sup === 'self' ? numField('weight', `وزن ${matOf(d.material).name}`, 'گرم', d.weight, 'فلزی که سینژین خودش به کارگاه می‌دهد.', true) : ''}
     ${sup === 'workshop' ? `<p class="help">${matOf(d.material).name} را کارگاه تأمین می‌کند؛ هزینه‌اش داخل فاکتور کارگاه است. (قابل تغییر در تنظیمات)</p>` : ''}
-    ${numField('invoice', 'فاکتور کارگاه', 'تومان', d.invoice, 'مبلغ کامل فاکتور ساخت.')}
+    ${numField('invoice', 'فاکتور کارگاه', 'تومان', d.invoice, invoiceHelp(d))}
     ${numField('stone', 'سنگ', 'تومان', d.stone, 'اگر سنگ ندارد، خالی بگذارید.')}
     ${formula === 'panel' ? `<div class="two">${numField('w', 'عرض', 'سانتی‌متر', d.w, '', true)}${numField('h', 'ارتفاع', 'سانتی‌متر', d.h, '', true)}</div>` : ''}
   </section>`;
@@ -131,9 +153,14 @@ function editorHTML(d, mode) {
     <label class="field"><span class="lab">یادداشت</span><span class="inp"><textarea data-text="note" rows="2" placeholder="اختیاری">${esc(d.note)}</textarea></span></label>
   </section>`;
   h += `<div class="pbar"></div>`;
-  h += `<div class="actions">${mode === 'edit' ? `<button class="btn ghost danger" data-del>حذف</button>` : `<button class="btn ghost" data-reset>پاک کردن فرم</button>`}
+  h += `<div class="actions">${mode === 'edit' ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>محصول مشابه</button>` : `<button class="btn ghost" data-reset>پاک کردن فرم</button>`}
     <button class="btn" data-save>${mode === 'edit' ? 'ذخیرهٔ تغییرات' : 'ذخیره در کاتالوگ'}</button></div>`;
   return h + '</div>';
+}
+
+function invoiceHelp(d) {
+  const sg = d.invoice == null ? suggestInvoice(S.products, d) : null;
+  return sg ? `مبلغ کامل فاکتور ساخت. پیشنهاد: ${toman(sg.value)} <button class="link" data-usesug="${sg.value}">استفاده</button><br>(میانهٔ فاکتور ${iso(faDigits(sg.n))} محصول هم‌نوع و هم‌سطح)` : 'مبلغ کامل فاکتور ساخت.';
 }
 
 function refreshPrice(root, d) {
@@ -149,19 +176,50 @@ function refreshPrice(root, d) {
       h += `<div class="cl"><span>${l.label}${how ? `<small>${how}</small>` : ''}</span><b>${l.value ? toman(l.value) : '—'}</b></div>`;
     }
     if (r.cost != null) h += `<div class="cl sum"><span>هزینهٔ تمام‌شده<small>جمع ردیف‌های بالا</small></span><b>${toman(r.cost)}</b></div>`;
-    if (r.cost != null && r.factor != null) {
-      h += `<div class="cl"><span>× ضریب «${levelOf(d.level).name}»<small>فرمول ${FORMULAS[r.formula].name}؛ هزینه × ${iso(fmtDec(r.factor))}</small></span><b>${toman(r.internal)}</b></div>`;
+    if (r.material && r.materialPart != null) h += `<div class="cl"><span>سهم متریال<small>(فلز + سنگ) × ضریب متریال ${iso(fmtDec(r.markup))}</small></span><b>${toman(r.materialPart)}</b></div>`;
+    if (r.workPart != null) h += `<div class="cl"><span>سهم کار و طراحی<small>فاکتور کارگاه × ضریب «${levelOf(d.level).name}» ${iso(fmtDec(r.factor))}</small></span><b>${toman(r.workPart)}</b></div>`;
+    if (r.internal != null) {
+      h += `<div class="cl sum"><span>قیمت<small>سهم متریال + سهم کار و طراحی</small></span><b>${toman(r.internal)}</b></div>`;
       h += r.step ? `<div class="cl"><span>گرد به بالا<small>تا مضرب ${toman(r.step)}</small></span><b>${toman(r.final)}</b></div>` : '';
     }
     h += `</div>`;
   }
   if (r.missing.length) {
-    h += `<ul class="missing">${r.missing.map(m => `<li>${m.key.startsWith('price:') || m.key.startsWith('factor:') ? `<button data-go="settings">${m.text}<span class="chev">‹</span></button>` : m.text}</li>`).join('')}</ul>`;
+    h += `<ul class="missing">${r.missing.map(m => `<li>${m.key.startsWith('price:') || m.key.startsWith('factor:') || m.key === 'markup' ? `<button data-go="settings">${m.text}<span class="chev">‹</span></button>` : m.text}</li>`).join('')}</ul>`;
   }
   box.innerHTML = h;
   box.classList.toggle('ok', r.complete);
   const bar = $('.pbar', root);
   if (bar) bar.innerHTML = `<span class="plabel">قیمت فروش</span><b>${r.complete ? toman(r.final) : 'هنوز کامل نیست'}</b>`;
+}
+
+// ---------- analysis ----------
+const pctTxt = x => iso(faDigits(Math.round(x * 100)) + '٪');
+function analysisHTML() {
+  if (!S.products.length) return `<div class="empty"><div class="ring"></div><p>تحلیل بعد از ثبت چند محصول ساخته می‌شود.</p><button class="btn" data-go="price">ثبت محصول</button></div>`;
+  const A = analyse(S.products, S.settings);
+  let h = `<section class="card"><h3>موجودی</h3>
+    <div class="kpi">${toman(A.value)}</div><p class="help">ارزش ${iso(faDigits(A.priced))} محصول موجود و رزرو با قیمت فروش${A.priced < A.stockCount ? `؛ ${iso(faDigits(A.stockCount - A.priced))} محصول هنوز قیمت کامل ندارد` : ''}.</p>
+    <div class="calc">
+      <div class="cl"><span>هزینهٔ همین محصولات<small>فلز با قیمت امروز + سنگ + فاکتور کارگاه</small></span><b>${toman(A.cost)}</b></div>
+      ${A.margin != null ? `<div class="cl sum"><span>حاشیهٔ سود<small>(ارزش − هزینه) ÷ ارزش</small></span><b>${pctTxt(A.margin)}</b></div>` : ''}
+    </div></section>`;
+  h += `<section class="card"><h3>فروش ۳۰ روز اخیر</h3>
+    <div class="kpis"><div><span class="kpi">${iso(faDigits(A.sold30))}</span><small>محصول فروخته شد</small></div><div><span class="kpi">${toman(A.revenue30)}</span><small>جمع قیمت فروش</small></div></div>
+    ${A.daysToSell != null ? `<p class="help">هر محصول به‌طور معمول ${iso(faDigits(Math.round(A.daysToSell)))} روز بعد از ثبت فروخته شده است (میانهٔ ${iso(faDigits(A.daysN))} فروش؛ تاریخ فروش − تاریخ ثبت).</p>` : '<p class="help">وقتی وضعیت محصولی «فروخته‌شده» شود، تاریخ فروش ثبت و اینجا تحلیل می‌شود.</p>'}</section>`;
+  const maxStock = Math.max(1, ...A.cats.map(c => c.stock));
+  h += `<section class="card"><h3>دسته‌ها</h3><div class="bars">${A.cats.map(c => `<div class="bar"><div class="bl"><b>${c.name}</b><small>${iso(faDigits(c.stock))} موجود، ${iso(faDigits(c.sold30))} فروش در ۳۰ روز${c.ratio ? `، قیمت ${iso(fmtDec(c.ratio))} برابر هزینه` : ''}</small></div>
+      <div class="track"><span style="width:${Math.round(c.stock / maxStock * 100)}%"></span></div></div>`).join('')}</div>
+    <p class="help">«برابر هزینه» = میانهٔ قیمت فروش ÷ هزینهٔ تمام‌شدهٔ محصولات موجود همان دسته.</p></section>`;
+  h += `<section class="card"><h3>پلکان قیمت</h3><p class="help">مشتری باید در هر دسته ببیند چرا سطح بالاتر گران‌تر است: ضریب هر سطح باید از سطح پایین‌تر بزرگ‌تر باشد.</p>
+    ${A.ladder.map(l => `<div class="ladder ${l.broken ? 'bad' : ''}"><b>${l.name}</b><span>${l.vals.map(x => `<i>${x.level.name} ${x.v == null ? '—' : iso(fmtDec(x.v))}</i>`).join('<em>‹</em>')}</span>${l.broken ? '<small>ترتیب ضریب‌ها درست نیست</small>' : ''}</div>`).join('')}</section>`;
+  if (A.metals.length) {
+    h += `<section class="card"><h3>حساسیت به قیمت فلز</h3>${A.metals.map(m => `<div class="cl"><span>${m.id === 'silver' ? 'نقره' : 'طلا'} در موجودی<small>${m.impact10 != null ? `اگر قیمت ۱۰٪ بالا برود، ارزش موجودی ${toman(m.impact10)} بیشتر می‌شود (گرم × قیمت × ۱۰٪ × ضریب متریال)` : 'قیمت روز یا ضریب متریال وارد نشده است'}</small></span><b>${iso(fmtDec(m.grams))} گرم</b></div>`).join('')}</section>`;
+  }
+  if (A.incomplete.length) {
+    h += `<section class="card"><h3>محصولات بدون قیمت کامل</h3>${A.incomplete.map(x => `<button class="cl row2" data-edit="${x.p.id}"><span>${esc(x.p.title || x.p.sub || 'بی‌نام')}<small>${x.r.missing[0].text}</small></span><span class="chev">‹</span></button>`).join('')}</section>`;
+  }
+  return h;
 }
 
 // ---------- settings ----------
@@ -173,11 +231,17 @@ function settingsHTML() {
     h += `<div class="metal"><div class="mhead"><b>${m.name}</b>
       <div class="seg"><button class="${sup === 'self' ? 'on' : ''}" data-sup="${m.id}" data-val="self">خودمان تأمین می‌کنیم</button><button class="${sup === 'workshop' ? 'on' : ''}" data-sup="${m.id}" data-val="workshop">داخل فاکتور کارگاه</button></div></div>
       ${sup === 'self' ? numField('price:' + m.id, `هر گرم ${m.name}`, 'تومان', st.prices[m.id] ?? null, st.pricesAt[m.id] ? `آخرین به‌روزرسانی: ${faDate(st.pricesAt[m.id])}` : 'هنوز وارد نشده است.') : ''}
+      ${sup === 'self' && S.market && S.market[m.id] ? `<div class="mkt"><span>بازار امروز (${MARKET_NAME[m.id]}): <b>${toman(S.market[m.id].p)}</b></span><button class="btn small ghost" data-usemarket="${m.id}">استفاده</button></div>
+` : ''}
     </div>`;
   }
+  if (S.market) h += `<p class="help">قیمت بازار از tgju (از طریق حساب من) می‌آید. قیمت خرید شما، مثلاً نقرهٔ ۹۲۵ یا با اجرت فروشنده، ممکن است کمی فرق کند؛ عدد نهایی را خودتان تأیید کنید.</p>`;
   h += `</section>`;
+  h += `<section class="card"><h3>فرمول قیمت</h3><p class="formula">قیمت = (فلز + سنگ) × ضریب متریال + فاکتور کارگاه × ضریب سطح</p>
+    <p class="help">فلز گران است؛ اگر همان ضریب کار را بگیرد، قیمت (به‌خصوص طلا) از بازار بیرون می‌زند. برای همین متریال ضریب کوچک‌تری دارد و ارزش طراحی سروین روی کار می‌آید. جواهرسازان مستقل معمولاً ضریب متریال را بین ${iso('۱٫۲')} و ${iso('۱٫۵')} می‌گذارند.</p>
+    ${numField('markup', 'ضریب متریال', '×', st.markup, 'روی فلزی که خودتان می‌دهید و سنگ.', true)}</section>`;
   h += `<section class="card"><h3>ضریب سطح‌ها</h3>
-    <p class="help">قیمت = هزینهٔ تمام‌شده × ضریب. ضریب ${iso('۲٫۵')} یعنی قیمت فروش دو و نیم برابر هزینه است. این ضریب ارزش طراحی سروین (و فعلاً سود) را در بر می‌گیرد. عددها بعد از بررسی چند محصول واقعی تنظیم می‌شوند.</p>
+    <p class="help">ضریب سطح در فاکتور کارگاه ضرب می‌شود. ضریب ${iso('۲٫۵')} یعنی سهم کار و طراحی دو و نیم برابر فاکتور است. این ضریب ارزش طراحی سروین و سود را در بر می‌گیرد. هر سطح باید ضریب بزرگ‌تری از سطح پایین‌ترش داشته باشد.</p>
     <div class="ftable"><div class="fh"><span></span>${LEVELS.map(l => `<span>${l.name}</span>`).join('')}</div>
     ${Object.entries(FORMULAS).map(([fid, f]) => `<div class="fr"><span>${f.name}</span>${LEVELS.map(l => {
       const v = st.factors[fid][l.id];
@@ -265,6 +329,9 @@ async function saveDraft(d, mode) {
     id: d.id || uid(), createdAt: d.createdAt || now, updatedAt: now,
     approved: r.complete ? { price: r.final, at: now } : null,
   });
+  // Sales analysis needs the sale date.
+  if (p.status === 'sold' && !(prev && prev.status === 'sold')) p.soldAt = now;
+  if (p.status !== 'sold') delete p.soldAt;
   // A sold product keeps the price it was sold at.
   if (prev && prev.status === 'sold' && p.status === 'sold' && prev.approved) p.approved = prev.approved;
   if (prev) for (const id of prev.photos || []) if (!p.photos.includes(id)) { await db.del('photos', id); urls.delete(id); }
@@ -362,6 +429,19 @@ function bindGlobal() {
     }
     if ('reset' in ds) { await discardAdded(S.draft); S.draft = newDraft(); render(); return; }
     if ('del' in ds) { deleteProduct(S.editing.id); return; }
+    if ('dup' in ds) {
+      const src = S.editing;
+      S.draft = Object.assign(newDraft(), { cat: src.cat, sub: src.sub, level: src.level, material: src.material, weight: src.weight, stone: src.stone, invoice: src.invoice, w: src.w, h: src.h });
+      closeSheet(); S.tab = 'price'; render(); scrollTo(0, 0); island('یک کپی ساخته شد؛ نام و عکس را وارد کنید'); return;
+    }
+    if (ds.usesug) { const d = ctxDraft(t); d.invoice = Number(ds.usesug); rerenderEditor(t); return; }
+    if (ds.usemarket) {
+      const m = ds.usemarket;
+      S.settings.prices[m] = S.market[m].p; S.settings.pricesAt[m] = Date.now();
+      await saveSettings(); render();
+      const n = drifted(S.products, S.settings).length;
+      island(n ? `قیمت به‌روز شد؛ ${faDigits(n)} محصول قیمت تازه دارند` : 'قیمت به‌روز شد'); return;
+    }
     if (ds.sup) { S.settings.suppliers[ds.sup] = ds.val; await saveSettings(); render(); return; }
     if (ds.round != null) { S.settings.rounding = Number(ds.round); await saveSettings(); render(); island('ذخیره شد'); return; }
     if ('export' in ds) { exportAll(); return; }
@@ -374,7 +454,7 @@ function bindGlobal() {
       const key = el.dataset.num, v = parseNum(el.value);
       // live grouping for money fields; decimals are left as typed
       if (!el.dataset.dec && v != null) el.value = fmt(v);
-      if (key.startsWith('price:') || key.startsWith('factor:')) { pendingSetting(key, v); return; }
+      if (key.startsWith('price:') || key.startsWith('factor:') || key === 'markup') { pendingSetting(key, v); return; }
       const d = ctxDraft(el);
       d[key] = v;
       refreshPrice(ctxRoot(el), d);
@@ -393,7 +473,8 @@ function bindGlobal() {
 // Settings numbers are saved shortly after typing stops.
 function pendingSetting(key, v) {
   const [kind, a, b] = key.split(':');
-  if (kind === 'price') { S.settings.prices[a] = v; S.settings.pricesAt[a] = v == null ? null : Date.now(); }
+  if (kind === 'markup') S.settings.markup = v;
+  else if (kind === 'price') { S.settings.prices[a] = v; S.settings.pricesAt[a] = v == null ? null : Date.now(); }
   else S.settings.factors[a][b] = v;
   clearTimeout(pendingSetting.t);
   pendingSetting.t = setTimeout(async () => {
