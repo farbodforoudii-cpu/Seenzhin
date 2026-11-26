@@ -1,5 +1,5 @@
 // Analysis for Servin. Pure functions; every number returned with what it is made of, so the UI can explain it.
-import { CATEGORIES, LEVELS, FORMULAS, price, supplierOf } from './model.js';
+import { CATEGORIES, LEVELS, FORMULAS, price, supplierOf, drifted } from './model.js';
 
 const DAY = 864e5;
 export const shownPrice = (p, st) => (p.approved ? p.approved.price : price(p, st).final);
@@ -66,4 +66,26 @@ export function marketGap(st, market) {
   return ['silver', 'gold'].filter(m => supplierOf(st, m) === 'self' && market[m] && st.prices[m])
     .map(m => ({ id: m, saved: st.prices[m], market: market[m].p, pct: market[m].p / st.prices[m] - 1 }))
     .filter(x => Math.abs(x.pct) >= 0.02);
+}
+
+// Headlines for the analysis page: one sentence each, what it means in small text, newest/most urgent first.
+// tone: 'g' good, 'o' watch, 'r' act. act: what tapping does.
+export function insights(products, st, market, now = Date.now()) {
+  const A = analyse(products, st, now);
+  const out = [];
+  const pc = x => Math.round(x * 100);
+  for (const g of marketGap(st, market)) {
+    out.push({ tone: 'o', t: `${g.id === 'silver' ? 'نقره' : 'طلا'} در بازار ${pc(Math.abs(g.pct))}٪ ${g.pct > 0 ? 'گران‌تر' : 'ارزان‌تر'} شده است`, d: 'قیمت ثبت‌شده را به‌روز کنید تا قیمت محصولات درست بماند.', act: { kind: 'market', id: g.id } });
+  }
+  const drift = drifted(products, st);
+  if (drift.length) out.push({ tone: 'o', t: `${drift.length} محصول منتظر تأیید قیمت تازه است`, d: 'قیمت فلز یا ضریب‌ها عوض شده است.', act: { kind: 'drift' } });
+  if (A.incomplete.length) out.push({ tone: 'r', t: `${A.incomplete.length} محصول هنوز قیمت ندارد`, d: A.incomplete[0].r.missing[0].text, act: { kind: 'edit', id: A.incomplete[0].p.id } });
+  const broken = A.ladder.filter(l => l.broken);
+  if (broken.length) out.push({ tone: 'r', t: `پلکان قیمت ${broken.map(l => l.name).join('، ')} به هم ریخته است`, d: 'سطح بالاتر باید ضریب بزرگ‌تری داشته باشد، وگرنه مشتری دلیل گرانی را نمی‌بیند.', act: { kind: 'settings' } });
+  const best = [...A.cats].sort((a, b) => b.sold30 - a.sold30)[0];
+  if (best && best.sold30) out.push({ tone: 'g', t: `${best.name} بیشترین فروش این ماه را داشت`, d: `${best.sold30} فروش در ۳۰ روز اخیر.` });
+  if (A.daysToSell != null) out.push({ tone: 'g', t: `هر محصول حدود ${Math.round(A.daysToSell)} روزه فروش می‌رود`, d: `میانهٔ ${A.daysN} فروش؛ از روز ثبت تا روز فروش.` });
+  const m = A.metals.find(x => x.impact10);
+  if (m) out.push({ tone: 'g', t: `${m.id === 'silver' ? 'نقره' : 'طلا'} ۱۰٪ گران شود، ویترین ${Math.round(m.impact10 / 1e5) / 10} میلیون بیشتر می‌ارزد`, d: `${Math.round(m.grams)} گرم در محصولات موجود.` });
+  return { A, items: out };
 }

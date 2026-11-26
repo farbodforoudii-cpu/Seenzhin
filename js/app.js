@@ -3,33 +3,43 @@ import {
   FORMULAS, CATEGORIES, LEVELS, MATERIALS, STATUSES, ROUNDING,
   defaultSettings, catOf, formulaOf, matOf, levelOf, supplierOf, price, drifted, setupSteps,
 } from './model.js';
-import { fmt, fmtDec, iso, toman, parseNum, esc, faDate, faDigits } from './format.js';
-import { analyse, suggestInvoice, marketGap, shownPrice } from './analysis.js';
+import { fmt, fmtDec, iso, parseNum, esc, faDigits, short, shortParts } from './format.js';
+import { insights, suggestInvoice, marketGap, shownPrice } from './analysis.js';
 
-const S = { settings: null, products: [], tab: 'catalog', filter: 'all', draft: null, market: null };
-const urls = new Map(); // photo id -> object URL
+// Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
+// short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
+const S = { settings: null, products: [], tab: 'home', filter: 'all', market: null, ed: null };
+const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const REDUCED = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Digits in generated sentences → Persian, isolated so a unit can never land between them.
+const say = s => esc(faDigits(String(s))).replace(/([۰-۹])\.([۰-۹])/g, '$1٫$2').replace(/[۰-۹][۰-۹٫٬]*٪?/g, m => iso(m));
+const plain = n => short(n).replace(/[⁦⁩]/g, '');
+const MARKET_NAME = { silver: 'نقرهٔ ۹۹۹', gold: 'طلای ۱۸ عیار' };
+const ICON = {
+  home: '<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/>',
+  analysis: '<path d="M4 20h16"/><path d="M7 16v-5M12 16V6M17 16v-8"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  chev: '<path d="M15 6l-6 6 6 6"/>',
+};
+const svg = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
 
 // ---------- boot ----------
 async function boot() {
-  const saved = await db.get('settings');
-  S.settings = Object.assign(defaultSettings(), saved || {});
+  S.settings = Object.assign(defaultSettings(), (await db.get('settings')) || {});
   S.products = (await db.all('products')).sort((a, b) => b.createdAt - a.createdAt);
   for (const ph of await db.all('photos')) urls.set(ph.id, URL.createObjectURL(ph.blob));
-  S.draft = newDraft();
   requestPersistence();
-  loadMarket();
-  bindGlobal();
+  bind();
   render();
+  loadMarket();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-
-const newDraft = () => ({ cat: null, sub: null, level: null, title: '', material: null, weight: null, stone: null, invoice: null, w: null, h: null, status: 'available', note: '', photos: [], _added: [] });
 const saveSettings = () => db.set('settings', S.settings);
 
 // Today's silver (999) and 18k gold per gram in toman, from hesab-man's tgju feed on the same GitHub Pages site.
-// Only a suggestion: Servin decides whether to use it. Offline or unavailable: the app works without it.
 async function loadMarket() {
   try {
     const r = await fetch('/hesab-man/data/prices.json', { cache: 'no-store' });
@@ -37,319 +47,295 @@ async function loadMarket() {
     const M = await r.json();
     if (!M.now || !M.now.silver) return;
     S.market = { silver: M.now.silver, gold: M.now.gold, at: M.at };
-    if (S.tab === 'catalog' || S.tab === 'settings') render();
-  } catch { /* offline */ }
+    if (!$('#sheet').classList.contains('open')) render();
+  } catch { /* offline: the app works without it */ }
 }
-const MARKET_NAME = { silver: 'نقرهٔ ۹۹۹', gold: 'طلای ۱۸ عیار' };
 
 // ---------- shell ----------
-const TABS = [
-  { id: 'catalog', name: 'کاتالوگ', icon: '<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/>' },
-  { id: 'price', name: 'قیمت‌گذاری', icon: '<path d="M4 12.5 11.5 5H19v7.5L11.5 20z"/><circle cx="15.3" cy="8.7" r="1.4"/>' },
-  { id: 'analysis', name: 'تحلیل', icon: '<path d="M4 20h16"/><path d="M7 16v-5M12 16V6M17 16v-8"/>' },
-  { id: 'settings', name: 'تنظیمات', icon: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>' },
-];
-
+const TABS = [['home', 'ویترین'], ['analysis', 'تحلیل'], ['settings', 'تنظیمات']];
 function render() {
-  const t = TABS.find(x => x.id === S.tab);
-  $('#title').textContent = t.name;
-  $('#tabs').innerHTML = TABS.map(x => `<button class="tab ${x.id === S.tab ? 'on' : ''}" data-tab="${x.id}" aria-label="${x.name}">
-    <svg viewBox="0 0 24 24" aria-hidden="true">${x.icon}</svg><span>${x.name}</span></button>`).join('');
+  $('#tabs').innerHTML = `<div class="inner">${TABS.map(([id, n]) => `<button class="${S.tab === id ? 'on' : ''}" data-tab="${id}">${svg(id)}<span>${n}</span></button>`).join('')}</div>`;
   const v = $('#view');
-  v.innerHTML = S.tab === 'catalog' ? catalogHTML() : S.tab === 'price' ? editorHTML(S.draft, 'new') : S.tab === 'analysis' ? analysisHTML() : settingsHTML();
-  if (S.tab === 'price') refreshPrice(v, S.draft);
-  stagger(v);
+  v.innerHTML = S.tab === 'home' ? viewHome() : S.tab === 'analysis' ? viewAnalysis() : viewSettings();
+  v.querySelectorAll('.enter').forEach((el, i) => el.style.setProperty('--i', Math.min(i, 10)));
+  v.querySelectorAll('[data-count]').forEach(countUp);
 }
 
-function stagger(root) {
-  root.querySelectorAll('.card, .pcard').forEach((el, i) => { el.style.setProperty('--i', Math.min(i, 12)); el.classList.add('enter'); });
+const head = (title, sub, extra = '') => `<header class="phead"><div><span class="psub">${sub}</span><h1>${title}</h1></div>${extra}</header>`;
+
+// Rolling hero number: counts up from 0 (straight to the value with reduced motion).
+function countUp(el) {
+  const to = Number(el.dataset.count), num = v => shortParts(v).num;
+  if (REDUCED() || !to) { el.textContent = num(to); return; }
+  const t0 = performance.now(), D = 900;
+  const step = t => { const k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 3); el.textContent = num(to * e); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
 }
 
 function island(text) {
   const el = $('#island');
-  el.textContent = text;
+  el.innerHTML = say(text);
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
-  clearTimeout(island.t); island.t = setTimeout(() => el.classList.remove('show'), 1900);
+  clearTimeout(island.t); island.t = setTimeout(() => el.classList.remove('show'), 2000);
 }
 
-// ---------- catalog ----------
-function catalogHTML() {
-  const steps = setupSteps(S.settings, S.products);
-  const drift = drifted(S.products, S.settings);
+// One row of a to-do / headline list.
+function line(x) {
+  const tag = x.act ? `button data-act="${x.act}"` : 'div';
+  return `<${tag} class="cell todo ${x.tone}"><i class="dot"></i><span class="c-main"><b>${say(x.t)}</b><small>${say(x.d)}</small></span>${x.btn ? `<span class="pill">${x.btn}</span>` : x.act ? svg('chev') : ''}</${x.act ? 'button' : 'div'}>`;
+}
+
+// ---------- home: the shop window ----------
+function todo() {
+  // What needs Servin now, most urgent first; at most three lines.
+  const L = [];
+  const next = setupSteps(S.settings, S.products).find(s => !s.done);
+  if (next) L.push({ tone: 'o', t: next.text, d: 'قدم بعدی برای راه‌اندازی', act: next.id === 'first' ? 'new' : 'settings' });
+  for (const g of marketGap(S.settings, S.market)) L.push({ tone: 'o', t: `${MARKET_NAME[g.id]} ${Math.abs(Math.round(g.pct * 100))}٪ ${g.pct > 0 ? 'گران‌تر' : 'ارزان‌تر'} شده است`, d: `بازار ${plain(g.market)}، ثبت‌شده ${plain(g.saved)} تومان هر گرم`, act: 'market:' + g.id, btn: 'به‌روز کن' });
+  const dr = drifted(S.products, S.settings);
+  if (dr.length) L.push({ tone: 'o', t: `${dr.length} قیمت تازه منتظر تأیید است`, d: 'برای دیدن قیمت قبلی و تازه بزنید', act: 'drift' });
+  const inc = S.products.filter(p => p.status !== 'sold' && !price(p, S.settings).complete);
+  if (inc.length) L.push({ tone: 'r', t: `${inc.length} محصول هنوز قیمت ندارد`, d: price(inc[0], S.settings).missing[0].text, act: 'edit:' + inc[0].id });
+  return L.slice(0, 3);
+}
+
+function viewHome() {
+  const stock = S.products.filter(p => p.status !== 'sold');
+  const value = stock.reduce((a, p) => a + (shownPrice(p, S.settings) || 0), 0);
+  const avail = stock.filter(p => p.status === 'available').length, res = stock.length - avail;
   const list = S.products.filter(p => S.filter === 'all' || p.cat === S.filter);
-  let h = '';
-  if (steps.some(s => !s.done)) {
-    h += `<section class="card setup"><h2>شروع کار</h2><p class="muted">با پرکردن این قدم‌ها، سینژین آمادهٔ قیمت‌گذاری می‌شود.</p><ol>
-      ${steps.map(s => `<li class="${s.done ? 'done' : ''}"><button class="row" data-go="${s.go}"><span class="tick">${s.done ? '✓' : ''}</span><span>${s.text}</span><span class="chev">‹</span></button></li>`).join('')}
-    </ol></section>`;
-  }
-  for (const g of marketGap(S.settings, S.market)) {
-    h += `<div class="card banner market"><span class="dot"></span><span><b>${MARKET_NAME[g.id]} در بازار ${iso(faDigits(Math.abs(Math.round(g.pct * 100))) + '٪')} ${g.pct > 0 ? 'گران‌تر' : 'ارزان‌تر'} از قیمت ثبت‌شده است.</b><br>
-      <span class="muted">بازار امروز ${toman(g.market)}، ثبت‌شده ${toman(g.saved)} (هر گرم). درصد = بازار ÷ ثبت‌شده − ۱.</span></span>
-      <button class="btn small" data-usemarket="${g.id}">استفاده</button></div>`;
-  }
-  if (drift.length) {
-    h += `<button class="card banner" data-open="drift"><span class="dot"></span><span><b>قیمت ${iso(faDigits(drift.length))} محصول با قیمت روز فرق دارد.</b><br><span class="muted">برای بررسی و تأیید بزنید.</span></span><span class="chev">‹</span></button>`;
-  }
-  h += `<div class="chips scroll">${[{ id: 'all', name: 'همه' }, ...CATEGORIES].map(c =>
-    `<button class="chip ${S.filter === c.id ? 'on' : ''}" data-filter="${c.id}">${c.name}<small>${iso(faDigits(c.id === 'all' ? S.products.length : S.products.filter(p => p.cat === c.id).length))}</small></button>`).join('')}</div>`;
-  if (!list.length) {
-    h += `<div class="empty"><div class="ring"></div><p>${S.products.length ? 'در این دسته هنوز محصولی نیست.' : 'هنوز محصولی ثبت نشده است.'}</p>
-      <button class="btn" data-go="price">ثبت اولین محصول</button></div>`;
+  const T = todo();
+  const sp = shortParts(value);
+  let h = head('سینژین', 'ویترین', `<button class="add-pill" data-new>${svg('plus')}<span>محصول</span></button>`);
+  h += `<section class="hero enter"><span class="hero-k">ارزش ویترین</span>
+    <div class="hero-n"><b data-count="${value}">${sp.num}</b><small>${sp.unit}</small></div>
+    <span class="hero-s">${say(stock.length ? `جمع قیمت فروش ${avail} محصول موجود${res ? ` و ${res} رزرو` : ''}` : 'هنوز محصولی ثبت نشده است')}</span></section>`;
+  if (T.length) h += `<div class="stitle">کارهای امروز</div><div class="group enter">${T.map(line).join('')}</div>`;
+  if (S.products.length) {
+    const cats = [{ id: 'all', name: 'همه' }, ...CATEGORIES.filter(c => S.products.some(p => p.cat === c.id))];
+    if (cats.length > 2) h += `<div class="chips scroll">${cats.map(c => `<button class="chip ${S.filter === c.id ? 'on' : ''}" data-filter="${c.id}">${c.name}</button>`).join('')}</div>`;
+    else h += `<div class="stitle">محصولات</div>`;
+    h += `<div class="grid">${list.map(card).join('')}</div>`;
   } else {
-    h += `<div class="grid">${list.map(productCard).join('')}</div>`;
+    h += `<div class="empty enter"><p>اولین محصول را ثبت کنید؛ قیمتش همان لحظه حساب می‌شود.</p><button class="btn" data-new>ثبت اولین محصول</button></div>`;
   }
   return h;
 }
 
-function productCard(p) {
-  const r = price(p, S.settings);
+function card(p) {
+  const v = shownPrice(p, S.settings);
   const ph = p.photos && p.photos[0] && urls.get(p.photos[0]);
-  const st = STATUSES.find(s => s.id === p.status);
   const name = p.title || [p.sub, levelOf(p.level) && levelOf(p.level).name].filter(Boolean).join('، ') || 'بی‌نام';
-  const shown = p.approved ? p.approved.price : r.final; // the approved price is the one customers see
-  return `<button class="pcard" data-edit="${p.id}">
-    <div class="thumb">${ph ? `<img src="${ph}" alt="">` : `<span class="noimg">${esc((catOf(p.cat) || {}).name || '')}</span>`}
-      <span class="status s-${p.status}">${st.name}</span></div>
-    <div class="pmeta"><div class="pname">${esc(name)}</div>
-      ${shown != null ? `<div class="pprice">${toman(shown)}</div>` : `<div class="pprice incomplete">قیمت کامل نیست</div>`}</div>
-  </button>`;
-}
-
-// ---------- editor (new product = «قیمت‌گذاری» tab; existing = sheet) ----------
-function chips(field, items, cur, extra = '') {
-  return `<div class="chips wrap" ${extra}>${items.map(it => `<button class="chip ${cur === it.id ? 'on' : ''}" data-set="${field}" data-val="${esc(it.id)}">${esc(it.name)}${it.hint ? `<small class="hint">${esc(it.hint)}</small>` : ''}</button>`).join('')}</div>`;
-}
-
-function numField(field, label, unit, val, help = '', dec = false) {
-  const shown = val == null ? '' : dec ? fmtDec(val) : fmt(val);
-  return `<label class="field"><span class="lab">${label}</span>
-    <span class="inp"><input data-num="${field}" ${dec ? 'data-dec="1"' : ''} inputmode="decimal" autocomplete="off" placeholder="وارد نشده" value="${shown}"><em>${unit}</em></span>
-    ${help ? `<span class="help">${help}</span>` : ''}</label>`;
-}
-
-function editorHTML(d, mode) {
-  const cat = catOf(d.cat);
-  const formula = formulaOf(d);
-  const sup = supplierOf(S.settings, d.material);
-  let h = `<div class="editor" data-mode="${mode}">`;
-  h += `<section class="card"><h3><span class="n">۱</span>دسته</h3>${chips('cat', CATEGORIES, d.cat)}
-    ${cat ? `<h4>نوع</h4>${chips('sub', cat.subs.map(s => ({ id: s, name: s })), d.sub)}<p class="help">فرمول قیمت: <b>${FORMULAS[formula].name}</b> (${FORMULAS[formula].hint})</p>` : ''}</section>`;
-  h += `<section class="card"><h3><span class="n">۲</span>سطح کار</h3>${chips('level', LEVELS, d.level)}
-    <p class="help">سطح کار ارزش طراحی را تعیین می‌کند: هزینهٔ تمام‌شده در ضریب این سطح ضرب می‌شود.</p></section>`;
-  h += `<section class="card"><h3><span class="n">۳</span>متریال و هزینه‌ها</h3>${chips('material', MATERIALS, d.material)}
-    ${sup === 'self' ? numField('weight', `وزن ${matOf(d.material).name}`, 'گرم', d.weight, 'فلزی که سینژین خودش به کارگاه می‌دهد.', true) : ''}
-    ${sup === 'workshop' ? `<p class="help">${matOf(d.material).name} را کارگاه تأمین می‌کند؛ هزینه‌اش داخل فاکتور کارگاه است. (قابل تغییر در تنظیمات)</p>` : ''}
-    ${numField('invoice', 'فاکتور کارگاه', 'تومان', d.invoice, invoiceHelp(d))}
-    ${numField('stone', 'سنگ', 'تومان', d.stone, 'اگر سنگ ندارد، خالی بگذارید.')}
-    ${formula === 'panel' ? `<div class="two">${numField('w', 'عرض', 'سانتی‌متر', d.w, '', true)}${numField('h', 'ارتفاع', 'سانتی‌متر', d.h, '', true)}</div>` : ''}
-  </section>`;
-  h += `<div class="pricecard"></div>`;
-  h += `<section class="card"><h3><span class="n">۴</span>معرفی محصول</h3>
-    <label class="field"><span class="lab">نام محصول</span><span class="inp"><input data-text="title" placeholder="مثلاً انگشتر موج" value="${esc(d.title)}"></span></label>
-    <div class="photos">${(d.photos || []).map(id => `<div class="ph"><img src="${urls.get(id) || ''}" alt=""><button class="x" data-rmphoto="${id}" aria-label="حذف عکس">×</button></div>`).join('')}
-      <label class="addph"><input type="file" accept="image/*" multiple data-photo hidden><span>+</span><small>عکس</small></label></div>
-    <h4>وضعیت</h4>${chips('status', STATUSES, d.status)}
-    <label class="field"><span class="lab">یادداشت</span><span class="inp"><textarea data-text="note" rows="2" placeholder="اختیاری">${esc(d.note)}</textarea></span></label>
-  </section>`;
-  h += `<div class="pbar"></div>`;
-  h += `<div class="actions">${mode === 'edit' ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>محصول مشابه</button>` : `<button class="btn ghost" data-reset>پاک کردن فرم</button>`}
-    <button class="btn" data-save>${mode === 'edit' ? 'ذخیرهٔ تغییرات' : 'ذخیره در کاتالوگ'}</button></div>`;
-  return h + '</div>';
-}
-
-function invoiceHelp(d) {
-  const sg = d.invoice == null ? suggestInvoice(S.products, d) : null;
-  return sg ? `مبلغ کامل فاکتور ساخت. پیشنهاد: ${toman(sg.value)} <button class="link" data-usesug="${sg.value}">استفاده</button><br>(میانهٔ فاکتور ${iso(faDigits(sg.n))} محصول هم‌نوع و هم‌سطح)` : 'مبلغ کامل فاکتور ساخت.';
-}
-
-function refreshPrice(root, d) {
-  const box = $('.pricecard', root);
-  if (!box) return;
-  const r = price(d, S.settings);
-  let h = `<div class="plabel">قیمت فروش</div>`;
-  h += r.complete ? `<div class="pbig">${iso(fmt(r.final))}<small>تومان</small></div>` : `<div class="pbig muted-big">هنوز کامل نیست</div>`;
-  if (r.lines.length || r.cost != null) {
-    h += `<div class="calc">`;
-    for (const l of r.lines) {
-      const how = l.how && l.how.kind === 'mul' ? `${iso(fmtDec(l.how.a))} ${l.how.aUnit} × ${toman(l.how.b)}` : l.how ? l.how.text : '';
-      h += `<div class="cl"><span>${l.label}${how ? `<small>${how}</small>` : ''}</span><b>${l.value ? toman(l.value) : '—'}</b></div>`;
-    }
-    if (r.cost != null) h += `<div class="cl sum"><span>هزینهٔ تمام‌شده<small>جمع ردیف‌های بالا</small></span><b>${toman(r.cost)}</b></div>`;
-    if (r.material && r.materialPart != null) h += `<div class="cl"><span>سهم متریال<small>(فلز + سنگ) × ضریب متریال ${iso(fmtDec(r.markup))}</small></span><b>${toman(r.materialPart)}</b></div>`;
-    if (r.workPart != null) h += `<div class="cl"><span>سهم کار و طراحی<small>فاکتور کارگاه × ضریب «${levelOf(d.level).name}» ${iso(fmtDec(r.factor))}</small></span><b>${toman(r.workPart)}</b></div>`;
-    if (r.internal != null) {
-      h += `<div class="cl sum"><span>قیمت<small>سهم متریال + سهم کار و طراحی</small></span><b>${toman(r.internal)}</b></div>`;
-      h += r.step ? `<div class="cl"><span>گرد به بالا<small>تا مضرب ${toman(r.step)}</small></span><b>${toman(r.final)}</b></div>` : '';
-    }
-    h += `</div>`;
-  }
-  if (r.missing.length) {
-    h += `<ul class="missing">${r.missing.map(m => `<li>${m.key.startsWith('price:') || m.key.startsWith('factor:') || m.key === 'markup' ? `<button data-go="settings">${m.text}<span class="chev">‹</span></button>` : m.text}</li>`).join('')}</ul>`;
-  }
-  box.innerHTML = h;
-  box.classList.toggle('ok', r.complete);
-  const bar = $('.pbar', root);
-  if (bar) bar.innerHTML = `<span class="plabel">قیمت فروش</span><b>${r.complete ? toman(r.final) : 'هنوز کامل نیست'}</b>`;
+  return `<button class="pcard enter" data-edit="${p.id}">
+    <div class="thumb">${ph ? `<img src="${ph}" alt="" loading="lazy">` : `<span class="noimg">${esc(p.sub || (catOf(p.cat) || {}).name || '')}</span>`}
+      ${p.status !== 'available' ? `<span class="badge s-${p.status}">${STATUSES.find(s => s.id === p.status).name}</span>` : ''}</div>
+    <div class="pmeta"><span class="pname">${esc(name)}</span><span class="pprice ${v == null ? 'none' : ''}">${v == null ? 'بدون قیمت' : short(v) + ' <small>تومان</small>'}</span></div></button>`;
 }
 
 // ---------- analysis ----------
-const pctTxt = x => iso(faDigits(Math.round(x * 100)) + '٪');
-function analysisHTML() {
-  if (!S.products.length) return `<div class="empty"><div class="ring"></div><p>تحلیل بعد از ثبت چند محصول ساخته می‌شود.</p><button class="btn" data-go="price">ثبت محصول</button></div>`;
-  const A = analyse(S.products, S.settings);
-  let h = `<section class="card"><h3>موجودی</h3>
-    <div class="kpi">${toman(A.value)}</div><p class="help">ارزش ${iso(faDigits(A.priced))} محصول موجود و رزرو با قیمت فروش${A.priced < A.stockCount ? `؛ ${iso(faDigits(A.stockCount - A.priced))} محصول هنوز قیمت کامل ندارد` : ''}.</p>
-    <div class="calc">
-      <div class="cl"><span>هزینهٔ همین محصولات<small>فلز با قیمت امروز + سنگ + فاکتور کارگاه</small></span><b>${toman(A.cost)}</b></div>
-      ${A.margin != null ? `<div class="cl sum"><span>حاشیهٔ سود<small>(ارزش − هزینه) ÷ ارزش</small></span><b>${pctTxt(A.margin)}</b></div>` : ''}
-    </div></section>`;
-  h += `<section class="card"><h3>فروش ۳۰ روز اخیر</h3>
-    <div class="kpis"><div><span class="kpi">${iso(faDigits(A.sold30))}</span><small>محصول فروخته شد</small></div><div><span class="kpi">${toman(A.revenue30)}</span><small>جمع قیمت فروش</small></div></div>
-    ${A.daysToSell != null ? `<p class="help">هر محصول به‌طور معمول ${iso(faDigits(Math.round(A.daysToSell)))} روز بعد از ثبت فروخته شده است (میانهٔ ${iso(faDigits(A.daysN))} فروش؛ تاریخ فروش − تاریخ ثبت).</p>` : '<p class="help">وقتی وضعیت محصولی «فروخته‌شده» شود، تاریخ فروش ثبت و اینجا تحلیل می‌شود.</p>'}</section>`;
-  const maxStock = Math.max(1, ...A.cats.map(c => c.stock));
-  h += `<section class="card"><h3>دسته‌ها</h3><div class="bars">${A.cats.map(c => `<div class="bar"><div class="bl"><b>${c.name}</b><small>${iso(faDigits(c.stock))} موجود، ${iso(faDigits(c.sold30))} فروش در ۳۰ روز${c.ratio ? `، قیمت ${iso(fmtDec(c.ratio))} برابر هزینه` : ''}</small></div>
-      <div class="track"><span style="width:${Math.round(c.stock / maxStock * 100)}%"></span></div></div>`).join('')}</div>
-    <p class="help">«برابر هزینه» = میانهٔ قیمت فروش ÷ هزینهٔ تمام‌شدهٔ محصولات موجود همان دسته.</p></section>`;
-  h += `<section class="card"><h3>پلکان قیمت</h3><p class="help">مشتری باید در هر دسته ببیند چرا سطح بالاتر گران‌تر است: ضریب هر سطح باید از سطح پایین‌تر بزرگ‌تر باشد.</p>
-    ${A.ladder.map(l => `<div class="ladder ${l.broken ? 'bad' : ''}"><b>${l.name}</b><span>${l.vals.map(x => `<i>${x.level.name} ${x.v == null ? '—' : iso(fmtDec(x.v))}</i>`).join('<em>‹</em>')}</span>${l.broken ? '<small>ترتیب ضریب‌ها درست نیست</small>' : ''}</div>`).join('')}</section>`;
-  if (A.metals.length) {
-    h += `<section class="card"><h3>حساسیت به قیمت فلز</h3>${A.metals.map(m => `<div class="cl"><span>${m.id === 'silver' ? 'نقره' : 'طلا'} در موجودی<small>${m.impact10 != null ? `اگر قیمت ۱۰٪ بالا برود، ارزش موجودی ${toman(m.impact10)} بیشتر می‌شود (گرم × قیمت × ۱۰٪ × ضریب متریال)` : 'قیمت روز یا ضریب متریال وارد نشده است'}</small></span><b>${iso(fmtDec(m.grams))} گرم</b></div>`).join('')}</section>`;
-  }
-  if (A.incomplete.length) {
-    h += `<section class="card"><h3>محصولات بدون قیمت کامل</h3>${A.incomplete.map(x => `<button class="cl row2" data-edit="${x.p.id}"><span>${esc(x.p.title || x.p.sub || 'بی‌نام')}<small>${x.r.missing[0].text}</small></span><span class="chev">‹</span></button>`).join('')}</section>`;
+function ring(label, p, num, unit, sub, tone = '') {
+  const R = 34, k = Math.max(0, Math.min(1, p || 0));
+  return `<div class="ring ${tone}"><div class="ring-box"><svg viewBox="0 0 80 80"><circle class="ring-track" cx="40" cy="40" r="${R}"/>
+    ${k > 0 ? `<circle class="ring-arc" cx="40" cy="40" r="${R}" pathLength="100" style="--p:${(k * 100).toFixed(1)}"/>` : ''}</svg>
+    <b class="ring-num">${iso(num)}<small>${unit}</small></b></div><span class="ring-t">${label}</span><small class="ring-c">${say(sub)}</small></div>`;
+}
+
+function viewAnalysis() {
+  let h = head('تحلیل', 'سینژین در یک نگاه');
+  if (!S.products.length) return h + `<div class="empty enter"><p>تحلیل بعد از ثبت چند محصول ساخته می‌شود.</p><button class="btn" data-new>ثبت محصول</button></div>`;
+  const { A, items } = insights(S.products, S.settings, S.market);
+  const all = S.products.length, soldAll = S.products.filter(p => p.status === 'sold').length;
+  // One sentence first (logic), then the numbers (rings), then the details.
+  const verdict = A.margin == null ? `ویترین ${A.stockCount} محصول دارد؛ برای دیدن سود، قیمت‌ها را کامل کنید.`
+    : `ویترین ${plain(A.value)} تومان می‌ارزد و ${Math.round(A.margin * 100)}٪ آن سود است.`;
+  h += `<section class="hero enter"><span class="hero-k">خلاصه</span><p class="hero-say">${say(verdict)}</p>
+    <span class="hero-s">${say('سود = (قیمت فروش − هزینه) ÷ قیمت فروش. هزینه = فلز با قیمت امروز + سنگ + فاکتور کارگاه.')}</span></section>`;
+  h += `<div class="rings group enter">
+    ${ring('سود', A.margin, faDigits(Math.round((A.margin || 0) * 100)) + '٪', 'از قیمت', 'سهم سود از قیمت فروش', 'acc')}
+    ${ring('قیمت‌دار', A.stockCount ? A.priced / A.stockCount : 0, faDigits(A.priced), `از ${faDigits(A.stockCount)}`, 'محصول با قیمت کامل', A.priced < A.stockCount ? 'warn' : 'ok')}
+    ${ring('فروش', all ? A.sold30 / all : 0, faDigits(A.sold30), 'در ۳۰ روز', A.sold30 ? `${plain(A.revenue30)} تومان` : 'هنوز فروشی نیست', 'ok')}
+  </div>`;
+  if (items.length) h += `<div class="stitle">خبرها</div><div class="group enter">${items.map(x => line({ ...x, act: x.act ? (x.act.kind === 'market' ? 'market:' + x.act.id : x.act.kind === 'edit' ? 'edit:' + x.act.id : x.act.kind) : '' })).join('')}</div>`;
+  const cats = A.cats.filter(c => c.stock || c.sold30);
+  if (cats.length) {
+    const mx = Math.max(1, ...cats.map(c => c.stock));
+    h += `<div class="stitle">دسته‌ها</div><div class="group enter">${cats.map(c => `<div class="cell col"><div class="crow"><b>${c.name}</b><span class="sec">${say(`${c.stock} موجود${c.sold30 ? `، ${c.sold30} فروش` : ''}`)}</span></div>
+      <i class="bar"><em style="width:${Math.round(c.stock / mx * 100)}%"></em></i></div>`).join('')}</div>
+      <p class="foot">${say(`طول نوار = تعداد محصول موجود هر دسته. تا امروز ${soldAll} محصول فروخته شده است.`)}</p>`;
   }
   return h;
 }
 
-// ---------- settings ----------
-function settingsHTML() {
+// ---------- settings: grouped like iOS settings ----------
+function numCell(key, label, unit, val, dec = false) {
+  const shown = val == null ? '' : dec ? fmtDec(val) : fmt(val);
+  return `<label class="cell"><span>${label}</span><input class="bare" data-num="${key}" ${dec ? 'data-dec="1"' : ''} inputmode="decimal" placeholder="وارد نشده" value="${shown}"><em class="u">${unit}</em></label>`;
+}
+function viewSettings() {
   const st = S.settings;
-  let h = `<section class="card"><h3>قیمت روز فلز</h3><p class="help">قیمت هر گرم را وارد کنید. با هر تغییر، کاتالوگ نشان می‌دهد قیمت کدام محصولات عوض می‌شود.</p>`;
-  for (const m of MATERIALS.filter(x => x.id !== 'none')) {
-    const sup = st.suppliers[m.id] || m.supplier;
-    h += `<div class="metal"><div class="mhead"><b>${m.name}</b>
-      <div class="seg"><button class="${sup === 'self' ? 'on' : ''}" data-sup="${m.id}" data-val="self">خودمان تأمین می‌کنیم</button><button class="${sup === 'workshop' ? 'on' : ''}" data-sup="${m.id}" data-val="workshop">داخل فاکتور کارگاه</button></div></div>
-      ${sup === 'self' ? numField('price:' + m.id, `هر گرم ${m.name}`, 'تومان', st.prices[m.id] ?? null, st.pricesAt[m.id] ? `آخرین به‌روزرسانی: ${faDate(st.pricesAt[m.id])}` : 'هنوز وارد نشده است.') : ''}
-      ${sup === 'self' && S.market && S.market[m.id] ? `<div class="mkt"><span>بازار امروز (${MARKET_NAME[m.id]}): <b>${toman(S.market[m.id].p)}</b></span><button class="btn small ghost" data-usemarket="${m.id}">استفاده</button></div>
-` : ''}
-    </div>`;
+  const metals = MATERIALS.filter(x => x.id !== 'none');
+  let h = head('تنظیمات', 'عددهای پایهٔ قیمت');
+  h += `<div class="stitle">قیمت فلز، هر گرم</div><div class="group enter">`;
+  for (const m of metals) {
+    if ((st.suppliers[m.id] || m.supplier) !== 'self') continue;
+    h += numCell('price:' + m.id, m.name, 'تومان', st.prices[m.id] ?? null);
+    if (S.market && S.market[m.id]) h += `<div class="cell sub"><span class="sec">${say(`بازار امروز ${plain(S.market[m.id].p)} تومان`)}</span><button class="pill" data-act="market:${m.id}">استفاده</button></div>`;
   }
-  if (S.market) h += `<p class="help">قیمت بازار از tgju (از طریق حساب من) می‌آید. قیمت خرید شما، مثلاً نقرهٔ ۹۲۵ یا با اجرت فروشنده، ممکن است کمی فرق کند؛ عدد نهایی را خودتان تأیید کنید.</p>`;
-  h += `</section>`;
-  h += `<section class="card"><h3>فرمول قیمت</h3><p class="formula">قیمت = (فلز + سنگ) × ضریب متریال + فاکتور کارگاه × ضریب سطح</p>
-    <p class="help">فلز گران است؛ اگر همان ضریب کار را بگیرد، قیمت (به‌خصوص طلا) از بازار بیرون می‌زند. برای همین متریال ضریب کوچک‌تری دارد و ارزش طراحی سروین روی کار می‌آید. جواهرسازان مستقل معمولاً ضریب متریال را بین ${iso('۱٫۲')} و ${iso('۱٫۵')} می‌گذارند.</p>
-    ${numField('markup', 'ضریب متریال', '×', st.markup, 'روی فلزی که خودتان می‌دهید و سنگ.', true)}</section>`;
-  h += `<section class="card"><h3>ضریب سطح‌ها</h3>
-    <p class="help">ضریب سطح در فاکتور کارگاه ضرب می‌شود. ضریب ${iso('۲٫۵')} یعنی سهم کار و طراحی دو و نیم برابر فاکتور است. این ضریب ارزش طراحی سروین و سود را در بر می‌گیرد. هر سطح باید ضریب بزرگ‌تری از سطح پایین‌ترش داشته باشد.</p>
-    <div class="ftable"><div class="fh"><span></span>${LEVELS.map(l => `<span>${l.name}</span>`).join('')}</div>
-    ${Object.entries(FORMULAS).map(([fid, f]) => `<div class="fr"><span>${f.name}</span>${LEVELS.map(l => {
+  h += `</div><div class="stitle">فلز را چه کسی می‌دهد؟</div><div class="group enter">${metals.map(m => {
+    const sup = st.suppliers[m.id] || m.supplier;
+    return `<div class="cell"><span>${m.name}</span><div class="seg"><button class="${sup === 'self' ? 'on' : ''}" data-sup="${m.id}" data-val="self">خودمان</button><button class="${sup === 'workshop' ? 'on' : ''}" data-sup="${m.id}" data-val="workshop">کارگاه</button></div></div>`;
+  }).join('')}</div><p class="foot">«کارگاه» یعنی هزینهٔ فلز داخل فاکتور کارگاه است.</p>`;
+  h += `<div class="stitle">ضریب‌ها</div><div class="group enter">${numCell('markup', 'ضریب متریال', '×', st.markup, true)}
+    <div class="cell col"><span class="sec">ضریب سطح</span><div class="ftable"><span></span>${LEVELS.map(l => `<span class="fh">${l.name}</span>`).join('')}
+    ${Object.entries(FORMULAS).map(([fid, f]) => `<span class="fl">${f.name}</span>${LEVELS.map(l => {
       const v = st.factors[fid][l.id];
       return `<input data-num="factor:${fid}:${l.id}" data-dec="1" inputmode="decimal" placeholder="—" value="${v == null ? '' : fmtDec(v)}" aria-label="ضریب ${l.name} ${f.name}">`;
-    }).join('')}</div>`).join('')}</div></section>`;
-  h += `<section class="card"><h3>گرد کردن قیمت</h3><p class="help">قیمت نهایی به بالا گرد می‌شود تا عددی تمیز باشد.</p>
-    <div class="chips wrap">${ROUNDING.map(r => `<button class="chip ${st.rounding === r ? 'on' : ''}" data-round="${r}">${r ? toman(r) : 'بدون گرد کردن'}</button>`).join('')}</div></section>`;
-  h += `<section class="card"><h3>پشتیبان</h3><p class="help">همهٔ داده‌ها فقط روی همین دستگاه است. هر چند وقت یک فایل پشتیبان بگیرید.</p>
-    <div class="actions"><button class="btn ghost" data-export>گرفتن پشتیبان</button><label class="btn ghost">بازگردانی<input type="file" accept="application/json" data-import hidden></label></div></section>`;
-  h += `<p class="foot">سینژین، نسخهٔ آزمایشی</p>`;
+    }).join('')}`).join('')}</div></div></div>
+    <details class="explain"><summary>قیمت چطور حساب می‌شود؟</summary>
+      <p class="formula">قیمت = (فلز + سنگ) × ضریب متریال + فاکتور کارگاه × ضریب سطح</p>
+      <p>${say('ضریب متریال کوچک است (جواهرسازان مستقل معمولاً ۱.۲ تا ۱.۵)، چون فلز گران است. ارزش طراحی سروین و سود در ضریب سطح است و روی کار کارگاه می‌آید. هر سطح باید ضریب بزرگ‌تری از سطح پایین‌تر داشته باشد.')}</p></details>`;
+  h += `<div class="stitle">گرد کردن قیمت به بالا</div><div class="group enter"><div class="cell"><div class="seg wide">${ROUNDING.map(r => `<button class="${st.rounding === r ? 'on' : ''}" data-round="${r}">${r ? short(r) : 'هیچ'}</button>`).join('')}</div></div></div>`;
+  h += `<div class="stitle">پشتیبان</div><div class="group enter"><button class="cell" data-export><span>گرفتن فایل پشتیبان</span>${svg('chev')}</button>
+    <label class="cell"><span>بازگردانی از فایل</span>${svg('chev')}<input type="file" accept="application/json" data-import hidden></label></div>
+    <p class="foot">داده‌ها فقط روی همین دستگاه است؛ هر چند وقت یک پشتیبان بگیرید.</p>`;
   return h;
 }
 
-// ---------- sheets ----------
-function openSheet(html, onBind) {
+// ---------- product editor: one question per screen ----------
+const STEPS = ['چه محصولی؟', 'سطح کار', 'هزینه‌ها', 'عکس و نام'];
+const blank = () => ({ cat: null, sub: null, level: null, title: '', material: null, weight: null, stone: null, invoice: null, w: null, h: null, status: 'available', note: '', photos: [], _added: [] });
+
+function openSheet(html) {
   const sh = $('#sheet');
-  sh.innerHTML = `<div class="scrim" data-close></div><div class="panel" role="dialog" aria-modal="true"><div class="grab"></div><button class="close" data-close aria-label="بستن">×</button>${html}</div>`;
-  sh.classList.add('open');
-  document.body.classList.add('locked');
-  if (onBind) onBind($('.panel', sh));
+  sh.innerHTML = `<div class="scrim" data-close></div><div class="panel" role="dialog" aria-modal="true">${html}</div>`;
+  sh.classList.add('open'); document.body.classList.add('locked');
 }
 function closeSheet() {
-  const sh = $('#sheet');
-  if (S.editing) discardAdded(S.editing);
-  S.editing = null;
-  sh.classList.remove('open');
-  document.body.classList.remove('locked');
-  setTimeout(() => { if (!sh.classList.contains('open')) sh.innerHTML = ''; }, 300);
+  $('#sheet').classList.remove('open'); document.body.classList.remove('locked');
+  setTimeout(() => { if (!$('#sheet').classList.contains('open')) $('#sheet').innerHTML = ''; }, 320);
+}
+function openEditor(p, step) {
+  const d = p ? Object.assign(blank(), JSON.parse(JSON.stringify(p)), { _added: [] }) : blank();
+  S.ed = { d, step: step ?? (p ? 4 : 0), edit: !!p };
+  openSheet('');
+  drawEditor();
+}
+async function closeEditor() {
+  if (S.ed) for (const id of S.ed.d._added) { await db.del('photos', id); urls.delete(id); }
+  S.ed = null;
+  closeSheet();
+  render();
 }
 
-function openEdit(id) {
-  const p = S.products.find(x => x.id === id);
-  if (!p) return;
-  S.editing = Object.assign(newDraft(), JSON.parse(JSON.stringify(p)), { _added: [] });
-  openSheet(`<h2 class="stitle">ویرایش محصول</h2>${editorHTML(S.editing, 'edit')}`, panel => refreshPrice(panel, S.editing));
+function chips(field, items, cur, big = false) {
+  return `<div class="chips wrap ${big ? 'big' : ''}">${items.map(it => `<button class="chip ${cur === it.id ? 'on' : ''}" data-set="${field}" data-val="${esc(it.id)}"><span>${esc(it.name)}</span>${it.hint ? `<small>${esc(it.hint)}</small>` : ''}</button>`).join('')}</div>`;
+}
+function field(key, label, unit, val, help = '', dec = false) {
+  const shown = val == null ? '' : dec ? fmtDec(val) : fmt(val);
+  return `<label class="field"><span class="lab">${label}</span><span class="inp"><input data-num="${key}" ${dec ? 'data-dec="1"' : ''} inputmode="decimal" placeholder="—" value="${shown}"><em>${unit}</em></span>${help ? `<span class="help">${help}</span>` : ''}</label>`;
+}
+const priceTag = r => (r.complete ? `${short(r.final)} <small>تومان</small>` : 'هنوز کامل نیست');
+
+function drawEditor() {
+  const { d, step } = S.ed;
+  const r = price(d, S.settings);
+  const panel = $('#sheet .panel');
+  let h = `<div class="ed-top"><button class="x" data-close aria-label="بستن">×</button>
+    ${step < 4 ? `<div class="ed-price ${r.complete ? 'ok' : ''}"><span>قیمت فروش</span><b>${priceTag(r)}</b></div>` : ''}</div>`;
+  if (step < 4) h += `<div class="dots">${STEPS.map((_, i) => `<i class="${i === step ? 'on' : i < step ? 'done' : ''}"></i>`).join('')}</div><h2 class="q">${STEPS[step]}</h2>`;
+  if (step === 0) {
+    h += chips('cat', CATEGORIES, d.cat, true);
+    const cat = catOf(d.cat);
+    if (cat) h += `<p class="lab2">کدام؟</p>${chips('sub', cat.subs.map(s => ({ id: s, name: s })), d.sub)}`;
+  } else if (step === 1) {
+    h += chips('level', LEVELS, d.level, true) + `<p class="help">هر سطح ضریب خودش را دارد؛ سطح بالاتر یعنی ارزش طراحی بیشتر.</p>`;
+  } else if (step === 2) {
+    const sup = supplierOf(S.settings, d.material);
+    h += `<p class="lab2">فلز</p>${chips('material', MATERIALS, d.material)}`;
+    if (sup === 'self') h += field('weight', `وزن ${matOf(d.material).name}`, 'گرم', d.weight, 'فلزی که خودتان به کارگاه می‌دهید.', true);
+    if (sup === 'workshop') h += `<p class="help">${matOf(d.material).name} را کارگاه می‌دهد؛ هزینه‌اش داخل فاکتور است.</p>`;
+    const sg = d.invoice == null ? suggestInvoice(S.products, d) : null;
+    h += field('invoice', 'فاکتور کارگاه', 'تومان', d.invoice, sg ? `${say(`محصولات مشابه معمولاً ${plain(sg.value)} تومان`)} <button class="link" data-usesug="${sg.value}">همین</button>` : 'مبلغ کامل فاکتور ساخت.');
+    h += field('stone', 'سنگ', 'تومان', d.stone, 'اگر سنگ ندارد، خالی بگذارید.');
+    if (formulaOf(d) === 'panel') h += `<div class="two">${field('w', 'عرض', 'سانتی‌متر', d.w, '', true)}${field('h', 'ارتفاع', 'سانتی‌متر', d.h, '', true)}</div>`;
+  } else if (step === 3) {
+    h += `<div class="photos">${d.photos.map(id => `<div class="ph"><img src="${urls.get(id) || ''}" alt=""><button class="rm" data-rmphoto="${id}" aria-label="حذف عکس">×</button></div>`).join('')}
+      <label class="addph"><input type="file" accept="image/*" multiple data-photo hidden>${svg('plus')}<small>عکس</small></label></div>
+      <label class="field"><span class="lab">نام محصول</span><span class="inp"><input data-text="title" placeholder="مثلاً انگشتر موج" value="${esc(d.title)}"></span></label>`;
+  } else {
+    h += summary(d, r);
+  }
+  if (step < 4) {
+    const can = [d.cat, d.level, d.material, true][step];
+    h += `<div class="ed-foot">${step ? `<button class="btn ghost" data-step="${step - 1}">قبلی</button>` : ''}<button class="btn" data-step="${step + 1}" ${can ? '' : 'disabled'}>${step === 3 ? 'مرور و ذخیره' : 'بعدی'}</button></div>`;
+  }
+  panel.innerHTML = h;
 }
 
+function summary(d, r) {
+  const cat = catOf(d.cat), lv = levelOf(d.level), mt = matOf(d.material);
+  const ph = d.photos[0] && urls.get(d.photos[0]);
+  const self = supplierOf(S.settings, d.material) === 'self';
+  const rows = [
+    [0, 'محصول', [cat && cat.name, d.sub].filter(Boolean).join('، ') || '—'],
+    [1, 'سطح کار', lv ? lv.name : '—'],
+    [2, 'هزینه‌ها', [mt && mt.name, self && d.weight != null ? `${d.weight} گرم` : '', d.invoice != null ? `کارگاه ${plain(d.invoice)}` : 'فاکتور وارد نشده'].filter(Boolean).join('، ')],
+    [3, 'نام و عکس', `${d.title || 'بدون نام'}، ${d.photos.length} عکس`],
+  ];
+  let h = `<div class="sum-head">${ph ? `<img src="${ph}" alt="">` : ''}<div><h2>${esc(d.title || d.sub || 'محصول تازه')}</h2>
+    <div class="big">${r.complete ? `${iso(fmt(r.final))} <small>تومان</small>` : '<span class="none">هنوز کامل نیست</span>'}</div></div></div>`;
+  if (r.missing.length) h += `<div class="group"><div class="cell col miss"><b>برای قیمت کامل:</b>${r.missing.map(m => `<span>${say(m.text)}</span>`).join('')}</div></div>`;
+  if (r.complete) {
+    h += `<details class="explain"><summary>چطور حساب شد؟</summary><div class="calc">
+      ${r.material ? `<div class="cl"><span>متریال<small>${say(`(فلز ${plain(r.material - (d.stone || 0))} + سنگ ${plain(d.stone || 0)}) × ${r.markup}`)}</small></span><b>${short(r.materialPart)}</b></div>` : ''}
+      <div class="cl"><span>کار و طراحی<small>${say(`فاکتور ${plain(r.invoice)} × ضریب ${lv.name} ${r.factor}`)}</small></span><b>${short(r.workPart)}</b></div>
+      ${r.step ? `<div class="cl"><span>گرد به بالا<small>${say(`تا مضرب ${plain(r.step)}`)}</small></span><b>${short(r.final)}</b></div>` : ''}</div></details>`;
+  }
+  h += `<div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}</div>`;
+  h += `<p class="lab2">وضعیت</p>${chips('status', STATUSES, d.status)}`;
+  h += `<div class="ed-foot">${S.ed.edit ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>مشابه</button>` : ''}<button class="btn" data-save>${S.ed.edit ? 'ذخیره' : 'ذخیره در ویترین'}</button></div>`;
+  return h;
+}
+
+// ---------- drift: approve today's prices ----------
 function openDrift() {
   const list = drifted(S.products, S.settings);
   if (!list.length) return;
-  openSheet(`<h2 class="stitle">قیمت‌های تازه</h2><p class="help">قیمت فلز یا ضریب‌ها تغییر کرده است. قیمت قبلی و قیمت تازهٔ هر محصول:</p>
-    <div class="drift">${list.map(x => {
-      const n = x.p.title || x.p.sub || 'بی‌نام';
+  openSheet(`<div class="ed-top"><button class="x" data-close aria-label="بستن">×</button></div><h2 class="q">قیمت‌های تازه</h2>
+    <div class="group">${list.map(x => {
       const pct = x.from ? Math.round((x.to - x.from) / x.from * 100) : null;
-      return `<div class="dl"><span>${esc(n)}</span><span class="dv">${x.from != null ? `<s>${toman(x.from)}</s>` : '<s>بدون قیمت</s>'}<b>${toman(x.to)}</b>${pct != null ? `<small class="${pct >= 0 ? 'up' : 'down'}">${iso(faDigits((pct > 0 ? '+' : '') + pct) + '٪')}</small>` : ''}</span></div>`;
-    }).join('')}</div>
-    <p class="help">درصد = (قیمت تازه − قیمت قبلی) ÷ قیمت قبلی.</p>
-    <div class="actions"><button class="btn ghost" data-close>بعداً</button><button class="btn" data-approve>تأیید همهٔ قیمت‌ها</button></div>`);
+      return `<div class="cell"><span>${esc(x.p.title || x.p.sub || 'بی‌نام')}</span><span class="dv">${x.from != null ? `<s>${short(x.from)}</s>` : ''}<b>${short(x.to)}</b>${pct != null ? `<small class="${pct >= 0 ? 'up' : 'down'}">${iso(faDigits((pct > 0 ? '+' : '') + pct) + '٪')}</small>` : ''}</span></div>`;
+    }).join('')}</div><p class="foot">درصد = (قیمت تازه − قیمت قبلی) ÷ قیمت قبلی.</p>
+    <div class="ed-foot"><button class="btn ghost" data-close>بعداً</button><button class="btn" data-approve>تأیید همه</button></div>`);
 }
 
 // ---------- photos ----------
 async function compress(file) {
   const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); });
-  const max = 1400, k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  const k = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
   const c = document.createElement('canvas');
   c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
   URL.revokeObjectURL(img.src);
   return new Promise(res => c.toBlob(res, 'image/jpeg', 0.82));
 }
-async function addPhotos(d, files) {
-  for (const f of files) {
-    try {
-      const blob = await compress(f);
-      const id = uid();
-      await db.put('photos', { id, blob });
-      urls.set(id, URL.createObjectURL(blob));
-      d.photos.push(id); d._added.push(id);
-    } catch { island('این عکس خوانده نشد'); }
-  }
-}
-async function discardAdded(d) {
-  for (const id of d._added || []) { await db.del('photos', id); urls.delete(id); }
-  d._added = [];
-}
 
-// ---------- save / delete ----------
-async function saveDraft(d, mode) {
-  if (!d.cat) { island('اول دسته را انتخاب کنید'); return false; }
-  const r = price(d, S.settings);
-  const now = Date.now();
+// ---------- save ----------
+async function save() {
+  const d = S.ed.d, r = price(d, S.settings), now = Date.now();
+  const prev = S.ed.edit ? S.products.find(x => x.id === d.id) : null;
   const { _added, ...clean } = d;
-  const prev = mode === 'edit' ? S.products.find(x => x.id === d.id) : null;
-  const p = Object.assign(clean, {
-    id: d.id || uid(), createdAt: d.createdAt || now, updatedAt: now,
-    approved: r.complete ? { price: r.final, at: now } : null,
-  });
-  // Sales analysis needs the sale date.
+  const p = Object.assign(clean, { id: d.id || uid(), createdAt: d.createdAt || now, updatedAt: now, approved: r.complete ? { price: r.final, at: now } : null });
+  if (prev && prev.status === 'sold' && p.status === 'sold' && prev.approved) p.approved = prev.approved; // sold price stays
   if (p.status === 'sold' && !(prev && prev.status === 'sold')) p.soldAt = now;
   if (p.status !== 'sold') delete p.soldAt;
-  // A sold product keeps the price it was sold at.
-  if (prev && prev.status === 'sold' && p.status === 'sold' && prev.approved) p.approved = prev.approved;
   if (prev) for (const id of prev.photos || []) if (!p.photos.includes(id)) { await db.del('photos', id); urls.delete(id); }
   await db.put('products', p);
   const i = S.products.findIndex(x => x.id === p.id);
   if (i >= 0) S.products[i] = p; else S.products.unshift(p);
-  d._added = [];
-  island(r.complete ? `ذخیره شد، ${fmt(r.final)} تومان` : 'ذخیره شد؛ قیمت هنوز کامل نیست');
-  return true;
-}
-
-async function deleteProduct(id) {
-  const p = S.products.find(x => x.id === id);
-  if (!p || !confirm('این محصول حذف شود؟')) return;
-  for (const ph of p.photos || []) { await db.del('photos', ph); urls.delete(ph); }
-  await db.del('products', id);
-  S.products = S.products.filter(x => x.id !== id);
-  S.editing = null; closeSheet(); render(); island('حذف شد');
+  S.ed.d._added = [];
+  await closeEditor();
+  island(r.complete ? `ذخیره شد، ${plain(r.final)} تومان` : 'ذخیره شد؛ قیمت هنوز کامل نیست');
 }
 
 // ---------- backup ----------
@@ -358,16 +344,14 @@ async function exportAll() {
   for (const ph of await db.all('photos')) photos.push({ id: ph.id, data: await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(ph.blob); }) });
   const blob = new Blob([JSON.stringify({ app: 'seenzhin', v: 1, at: Date.now(), settings: S.settings, products: S.products, photos })], { type: 'application/json' });
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `seenzhin-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
+  a.href = URL.createObjectURL(blob); a.download = `seenzhin-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 async function importAll(file) {
   try {
     const data = JSON.parse(await file.text());
     if (data.app !== 'seenzhin') throw 0;
-    if (!confirm('داده‌های فعلی این دستگاه با فایل پشتیبان جایگزین شود؟')) return;
+    if (!confirm('داده‌های این دستگاه با فایل پشتیبان جایگزین شود؟')) return;
     await db.clear('products'); await db.clear('photos');
     for (const ph of data.photos || []) await db.put('photos', { id: ph.id, blob: await (await fetch(ph.data)).blob() });
     await db.putMany('products', data.products || []);
@@ -377,97 +361,102 @@ async function importAll(file) {
 }
 
 // ---------- events ----------
-function ctxDraft(el) { return el.closest('#sheet') ? S.editing : S.draft; }
-function ctxRoot(el) { return el.closest('#sheet') ? $('#sheet .panel') : $('#view'); }
-
-function rerenderEditor(el) {
-  const inSheet = !!el.closest('#sheet');
-  const d = ctxDraft(el);
-  const root = ctxRoot(el);
-  const ed = $('.editor', root);
-  const y = (inSheet ? root : document.scrollingElement).scrollTop;
-  ed.outerHTML = editorHTML(d, inSheet ? 'edit' : 'new');
-  refreshPrice(root, d);
-  (inSheet ? root : document.scrollingElement).scrollTop = y;
+async function doAct(a) {
+  if (a === 'new') return openEditor(null);
+  if (a === 'settings') { S.tab = 'settings'; render(); return scrollTo(0, 0); }
+  if (a === 'drift') return openDrift();
+  if (a.startsWith('edit:')) return openEditor(S.products.find(p => p.id === a.slice(5)));
+  if (a.startsWith('market:')) {
+    const m = a.slice(7);
+    if (!S.market || !S.market[m]) return;
+    S.settings.prices[m] = S.market[m].p; S.settings.pricesAt[m] = Date.now();
+    await saveSettings(); render();
+    const n = drifted(S.products, S.settings).length;
+    island(n ? `قیمت به‌روز شد؛ ${n} محصول قیمت تازه دارد` : 'قیمت به‌روز شد');
+  }
 }
 
-function bindGlobal() {
+function bind() {
   document.addEventListener('click', async e => {
     const t = e.target.closest('button, [data-close]');
-    if (!t) return;
+    if (!t || t.disabled) return;
     const ds = t.dataset;
-    if (ds.tab) { S.tab = ds.tab; render(); scrollTo(0, 0); return; }
-    if (ds.go) { if (t.closest('#sheet')) closeSheet(); S.tab = ds.go; render(); scrollTo(0, 0); return; }
-    if ('close' in ds) { closeSheet(); return; }
-    if (ds.filter) { S.filter = ds.filter; render(); return; }
-    if (ds.edit) { openEdit(ds.edit); return; }
-    if (ds.open === 'drift') { openDrift(); return; }
+    if (ds.tab) { S.tab = ds.tab; render(); return scrollTo(0, 0); }
+    if ('close' in ds) return S.ed ? closeEditor() : closeSheet();
+    if ('new' in ds) return openEditor(null);
+    if (ds.act) return doAct(ds.act);
+    if (ds.filter) { S.filter = ds.filter; return render(); }
+    if (ds.edit) return openEditor(S.products.find(p => p.id === ds.edit));
     if ('approve' in ds) {
       const list = drifted(S.products, S.settings), now = Date.now();
       for (const x of list) x.p.approved = { price: x.to, at: now };
       await db.putMany('products', list.map(x => x.p));
-      closeSheet(); render(); island(`قیمت ${faDigits(list.length)} محصول به‌روز شد`); return;
+      closeSheet(); render(); return island(`${list.length} قیمت تأیید شد`);
     }
+    if (ds.sup) { S.settings.suppliers[ds.sup] = ds.val; await saveSettings(); return render(); }
+    if (ds.round != null) { S.settings.rounding = Number(ds.round); await saveSettings(); render(); return island('ذخیره شد'); }
+    if ('export' in ds) return exportAll();
+    if (!S.ed) return;
+    const d = S.ed.d;
     if (ds.set) {
-      const d = ctxDraft(t), f = ds.set;
-      d[f] = d[f] === ds.val && f !== 'status' ? null : ds.val;
+      const f = ds.set;
+      d[f] = ds.val;
       if (f === 'cat') d.sub = null;
-      rerenderEditor(t); return;
+      drawEditor();
+      // One question per screen: a choice that completes the step moves on by itself.
+      if ((f === 'sub' || f === 'level') && S.ed.step < 4) setTimeout(() => { if (S.ed && S.ed.step < 4) { S.ed.step++; drawEditor(); } }, 280);
+      return;
     }
+    if (ds.step != null) { S.ed.step = Number(ds.step); drawEditor(); $('#sheet .panel').scrollTop = 0; return; }
+    if (ds.usesug) { d.invoice = Number(ds.usesug); return drawEditor(); }
     if (ds.rmphoto) {
-      const d = ctxDraft(t), id = ds.rmphoto;
-      d.photos = d.photos.filter(x => x !== id);
+      const id = ds.rmphoto; d.photos = d.photos.filter(x => x !== id);
       if (d._added.includes(id)) { d._added = d._added.filter(x => x !== id); await db.del('photos', id); urls.delete(id); }
-      rerenderEditor(t); return;
+      return drawEditor();
     }
-    if ('save' in ds) {
-      const inSheet = !!t.closest('#sheet');
-      const ok = await saveDraft(inSheet ? S.editing : S.draft, inSheet ? 'edit' : 'new');
-      if (!ok) return;
-      if (inSheet) { S.editing = null; closeSheet(); } else { S.draft = newDraft(); S.tab = 'catalog'; }
-      render(); return;
+    if ('save' in ds) return save();
+    if ('del' in ds) {
+      if (!confirm('این محصول حذف شود؟')) return;
+      for (const ph of d.photos) { await db.del('photos', ph); urls.delete(ph); }
+      await db.del('products', d.id);
+      S.products = S.products.filter(x => x.id !== d.id);
+      S.ed.d._added = []; await closeEditor(); return island('حذف شد');
     }
-    if ('reset' in ds) { await discardAdded(S.draft); S.draft = newDraft(); render(); return; }
-    if ('del' in ds) { deleteProduct(S.editing.id); return; }
     if ('dup' in ds) {
-      const src = S.editing;
-      S.draft = Object.assign(newDraft(), { cat: src.cat, sub: src.sub, level: src.level, material: src.material, weight: src.weight, stone: src.stone, invoice: src.invoice, w: src.w, h: src.h });
-      closeSheet(); S.tab = 'price'; render(); scrollTo(0, 0); island('یک کپی ساخته شد؛ نام و عکس را وارد کنید'); return;
+      const src = d;
+      await closeEditor();
+      openEditor(null, 2);
+      Object.assign(S.ed.d, { cat: src.cat, sub: src.sub, level: src.level, material: src.material, weight: src.weight, stone: src.stone, invoice: src.invoice, w: src.w, h: src.h });
+      drawEditor(); return island('کپی شد؛ عددها را بررسی کنید');
     }
-    if (ds.usesug) { const d = ctxDraft(t); d.invoice = Number(ds.usesug); rerenderEditor(t); return; }
-    if (ds.usemarket) {
-      const m = ds.usemarket;
-      S.settings.prices[m] = S.market[m].p; S.settings.pricesAt[m] = Date.now();
-      await saveSettings(); render();
-      const n = drifted(S.products, S.settings).length;
-      island(n ? `قیمت به‌روز شد؛ ${faDigits(n)} محصول قیمت تازه دارند` : 'قیمت به‌روز شد'); return;
-    }
-    if (ds.sup) { S.settings.suppliers[ds.sup] = ds.val; await saveSettings(); render(); return; }
-    if (ds.round != null) { S.settings.rounding = Number(ds.round); await saveSettings(); render(); island('ذخیره شد'); return; }
-    if ('export' in ds) { exportAll(); return; }
   });
 
   document.addEventListener('input', e => {
     const el = e.target;
-    if (el.dataset.text) { ctxDraft(el)[el.dataset.text] = el.value; return; }
-    if (el.dataset.num) {
-      const key = el.dataset.num, v = parseNum(el.value);
-      // live grouping for money fields; decimals are left as typed
-      if (!el.dataset.dec && v != null) el.value = fmt(v);
-      if (key.startsWith('price:') || key.startsWith('factor:') || key === 'markup') { pendingSetting(key, v); return; }
-      const d = ctxDraft(el);
-      d[key] = v;
-      refreshPrice(ctxRoot(el), d);
-    }
+    if (el.dataset.text && S.ed) { S.ed.d[el.dataset.text] = el.value; return; }
+    if (!el.dataset.num) return;
+    const key = el.dataset.num, v = parseNum(el.value);
+    if (!el.dataset.dec && v != null) el.value = fmt(v);
+    else if (el.dataset.dec) el.value = faDigits(el.value).replace('.', '٫');
+    if (key.startsWith('price:') || key.startsWith('factor:') || key === 'markup') return pendingSetting(key, v);
+    if (!S.ed) return;
+    S.ed.d[key] = v;
+    const r = price(S.ed.d, S.settings), box = $('.ed-price');
+    if (box) { box.classList.toggle('ok', r.complete); box.querySelector('b').innerHTML = priceTag(r); }
   });
 
   document.addEventListener('change', async e => {
     const el = e.target;
-    if ('photo' in el.dataset && el.files.length) { const d = ctxDraft(el); await addPhotos(d, [...el.files]); rerenderEditor(el); return; }
+    if ('photo' in el.dataset && el.files.length && S.ed) {
+      for (const f of el.files) {
+        try { const blob = await compress(f), id = uid(); await db.put('photos', { id, blob }); urls.set(id, URL.createObjectURL(blob)); S.ed.d.photos.push(id); S.ed.d._added.push(id); }
+        catch { island('این عکس خوانده نشد'); }
+      }
+      return drawEditor();
+    }
     if ('import' in el.dataset && el.files[0]) importAll(el.files[0]);
   });
-
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#sheet').classList.contains('open')) closeSheet(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#sheet').classList.contains('open')) (S.ed ? closeEditor() : closeSheet()); });
 }
 
 // Settings numbers are saved shortly after typing stops.
@@ -480,7 +469,7 @@ function pendingSetting(key, v) {
   pendingSetting.t = setTimeout(async () => {
     await saveSettings();
     const n = drifted(S.products, S.settings).length;
-    island(n ? `ذخیره شد؛ قیمت ${faDigits(n)} محصول تغییر می‌کند` : 'ذخیره شد');
+    island(n ? `ذخیره شد؛ ${n} محصول قیمت تازه می‌گیرد` : 'ذخیره شد');
   }, 700);
 }
 

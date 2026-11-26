@@ -32,3 +32,21 @@ export function faDate(ts) {
   try { return new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(ts)); }
   catch { return ''; }
 }
+
+// Compact: 28,000,000 -> «۲۸ میلیون»; 1,250,000 -> «۱٫۳ میلیون»; 850,000 -> «۸۵۰ هزار». Number isolated from the unit.
+export function short(n) {
+  const a = Math.abs(n), sign = n < 0 ? '−' : '';
+  const t = x => (x >= 100 ? String(Math.round(x)) : String(Math.round(x * 10) / 10));
+  if (a >= 1e9) return iso(sign + faDigits(t(a / 1e9)).replace('.', '٫')) + ' میلیارد';
+  if (a >= 1e6) return iso(sign + faDigits(t(a / 1e6)).replace('.', '٫')) + ' میلیون';
+  if (a >= 1e3) return iso(sign + faDigits(Math.round(a / 1e3))) + ' هزار';
+  return iso(sign + faDigits(Math.round(a)));
+}
+// Split for ring centres and hero numbers: { num: '۲٫۳', unit: 'میلیون' }
+export function shortParts(n) {
+  const a = Math.abs(n), t = x => faDigits(x >= 100 ? Math.round(x) : Math.round(x * 10) / 10).replace('.', '٫');
+  if (a >= 1e9) return { num: t(n / 1e9), unit: 'میلیارد تومان' };
+  if (a >= 1e6) return { num: t(n / 1e6), unit: 'میلیون تومان' };
+  if (a >= 1e3) return { num: faDigits(Math.round(n / 1e3)), unit: 'هزار تومان' };
+  return { num: faDigits(Math.round(n)), unit: 'تومان' };
+}
