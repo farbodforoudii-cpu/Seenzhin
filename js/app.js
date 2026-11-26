@@ -111,7 +111,7 @@ function viewHome() {
   const list = S.products.filter(p => S.filter === 'all' || p.cat === S.filter);
   const T = todo();
   const sp = shortParts(value);
-  let h = head('سینژین', 'ویترین', `<button class="add-pill" data-new>${svg('plus')}<span>محصول</span></button>`);
+  let h = `<div class="brand-top"><img class="brand-logo" src="brand/logo-sun.png" alt="سینژین"></div>` + head('ویترین', 'سینژین', `<button class="add-pill" data-new>${svg('plus')}<span>محصول</span></button>`);
   h += `<section class="hero enter"><span class="hero-k">ارزش ویترین</span>
     <div class="hero-n"><b data-count="${value}">${sp.num}</b><small>${sp.unit}</small></div>
     <span class="hero-s">${say(stock.length ? `جمع قیمت فروش ${avail} محصول موجود${res ? ` و ${res} رزرو` : ''}` : 'هنوز محصولی ثبت نشده است')}</span></section>`;
@@ -237,7 +237,7 @@ function drawInvoice() {
 }
 const loadImg = src => new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
 async function invoiceImage(inv) {
-  const logo = await loadImg(S.logo);
+  const logo = await loadImg(S.logo || 'brand/logo-sun.png');
   const ph = {};
   for (const it of inv.items) if (it.photo) ph[it.photo] = await loadImg(urls.get(it.photo));
   return renderInvoice(inv, { ...(S.settings.brand || {}), name: 'سینژین' }, logo, id => ph[id] || null);

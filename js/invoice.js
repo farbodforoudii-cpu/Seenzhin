@@ -28,7 +28,8 @@ const dateFa = ts => new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'nume
 
 // ---------- image ----------
 const W = 1080, PAD = 72, IN = 28, R = W - PAD, L = PAD, TR = R - IN, TL = L + IN; // TR/TL: the one text column edge for every row
-const C = { bg: '#faf8f4', ink: '#1d1c1a', sec: '#7a746c', line: '#e6e1d8', acc: '#a5814f', soft: '#f1ede6', ok: '#5f7f66', warn: '#b07a2c' };
+// Seenzhin brand palette: mint #D3DED7, gold #B7975B, sand, charcoal #5A605C (deepened for text).
+const C = { bg: '#f7f5f1', mint: '#d3ded7', ink: '#3c423e', sec: '#77736b', line: '#e2ddd5', acc: '#b7975b', soft: '#ece8e2', ok: '#6c8a77', warn: '#a2803f' };
 
 function wrap(ctx, text, maxW) {
   const words = String(text).split(' '), lines = [];
@@ -45,7 +46,7 @@ export async function renderInvoice(inv, brand, logo, photo) {
   const T = totals(inv);
   const items = inv.items || [];
   const rowH = 150;
-  const H = 520 + items.length * rowH + 440 + (inv.note ? 80 : 0);
+  const H = 640 + items.length * rowH + 440 + (inv.note ? 80 : 0);
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
@@ -55,19 +56,18 @@ export async function renderInvoice(inv, brand, logo, photo) {
   const money = v => `${fmt(v)} تومان`;
   const ltr = (s, x, y, align, color) => { ctx.direction = 'ltr'; txt(s, x, y, align, color); ctx.direction = 'rtl'; };
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = C.acc; ctx.fillRect(0, 0, W, 10);
-
-  // brand, centred
-  let y = 70;
+  // brand header on the brand mint, logo centred and unaltered
+  ctx.fillStyle = C.mint; ctx.fillRect(0, 0, W, 300);
+  let y = 60;
   if (logo) {
-    const h = 130, w = Math.min(420, logo.naturalWidth * h / logo.naturalHeight);
-    ctx.drawImage(logo, (W - w) / 2, y, w, h); y += h + 30;
+    const h = 180, w = Math.min(560, logo.naturalWidth * h / logo.naturalHeight);
+    ctx.drawImage(logo, (W - w) / 2, y, w, h); y = 300;
   } else {
     font(800, 54); ctx.letterSpacing = '14px'; ctx.direction = 'ltr'; txt('SEENZHIN', W / 2 + 7, y + 60, 'center'); ctx.letterSpacing = '0px'; ctx.direction = 'rtl';
-    font(400, 30); txt(brand.name || 'سینژین', W / 2, y + 110, 'center', C.sec); y += 150;
+    font(400, 30); txt(brand.name || 'سینژین', W / 2, y + 110, 'center', C.sec); y = 300;
   }
-  // title row
-  y += 40;
+  // title row, clear of the mint header
+  y += 76;
   font(800, 44); txt('فاکتور فروش', TR, y);
   font(400, 28); ltr(faDigits(inv.no), TL, y - 14, 'left', C.sec); txt(dateFa(inv.date), TL, y + 26, 'left', C.sec);
   y += 50; ctx.fillStyle = C.line; ctx.fillRect(L, y, R - L, 2);

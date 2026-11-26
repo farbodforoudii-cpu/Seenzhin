@@ -2,21 +2,23 @@
 
 /* Seenzhin: warm ivory and graphite with a champagne-silver accent; few colours (accent, sage, amber, burgundy). */
 :root {
-  --bg: #f4f1ec; --bg-2: #ebe5db; --card: #ffffff; --fill: #f1ede6; --ink: #1d1c1a; --sec: #77716a; --ter: #aaa49b; --sep: #e6e1d8;
-  --acc: #a5814f; --hero: #1f1e1c; --hero-ink: #f4f1ec; --hero-sec: #b5ada1;
-  --g: #5f7f66; --o: #b07a2c; --r: #8f3a3f;
-  --shadow: 0 1px 2px rgba(40,30,15,.04), 0 8px 24px rgba(40,30,15,.06);
+  /* Seenzhin brand palette (brand guide): sand #DBD3C9, mint #D3DED7, gold #B7975B, taupe #ADA89F, charcoal #5A605C.
+     Text colours are the palette deepened just enough to read well on ivory. */
+  --bg: #f5f3ef; --bg-2: #d3ded7; --card: #fdfcfa; --fill: #ece8e2; --ink: #3c423e; --sec: #77736b; --ter: #ada89f; --sep: #e2ddd5;
+  --acc: #aa893c; --hero: #d3ded7; --hero-ink: #3c423e; --hero-sec: #66706a;
+  --g: #6c8a77; --o: #a2803f; --r: #8f4a4a;
+  --shadow: 0 1px 2px rgba(60,66,62,.04), 0 8px 24px rgba(60,66,62,.07);
   --ease: cubic-bezier(.2,.8,.2,1);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #121211; --bg-2: #1b1a18; --card: #1d1c1b; --fill: #272624; --ink: #efece7; --sec: #a09a91; --ter: #6d6861; --sep: #2f2e2b;
-  --acc: #d2b07c; --hero: #2a2825; --hero-ink: #f4f1ec; --hero-sec: #b5ada1;
-  --g: #8fb397; --o: #dba75b; --r: #da8d92; --shadow: none; color-scheme: dark; } }
+  --bg: #1f2321; --bg-2: #2b332f; --card: #282d2a; --fill: #323834; --ink: #ece8e2; --sec: #a9a49b; --ter: #6f6c66; --sep: #383e3a;
+  --acc: #c8a866; --hero: #2f3833; --hero-ink: #ece8e2; --hero-sec: #a9b3ac;
+  --g: #93b29d; --o: #d0ad68; --r: #d69a9a; --shadow: none; color-scheme: dark; } }
 :root[data-theme="dark"] {
-  --bg: #121211; --bg-2: #1b1a18; --card: #1d1c1b; --fill: #272624; --ink: #efece7; --sec: #a09a91; --ter: #6d6861; --sep: #2f2e2b;
-  --acc: #d2b07c; --hero: #2a2825; --hero-ink: #f4f1ec; --hero-sec: #b5ada1;
-  --g: #8fb397; --o: #dba75b; --r: #da8d92; --shadow: none; color-scheme: dark;
+  --bg: #1f2321; --bg-2: #2b332f; --card: #282d2a; --fill: #323834; --ink: #ece8e2; --sec: #a9a49b; --ter: #6f6c66; --sep: #383e3a;
+  --acc: #c8a866; --hero: #2f3833; --hero-ink: #ece8e2; --hero-sec: #a9b3ac;
+  --g: #93b29d; --o: #d0ad68; --r: #d69a9a; --shadow: none; color-scheme: dark;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -262,3 +264,9 @@ input.full { width: 100%; padding: 0; font-weight: 600; }
   .print { display: block; }
   .print img { width: 100%; }
 }
+
+/* brand logo in the home header */
+.brand-top { display: flex; justify-content: center; padding-top: calc(14px + env(safe-area-inset-top)); }
+.brand-logo { height: 68px; width: auto; display: block; }
+.brand-top + .phead { padding-top: 10px; }
+.phead { align-items: center; }
