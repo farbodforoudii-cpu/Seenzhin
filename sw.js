@@ -1,8 +1,8 @@
 // Offline-first service worker: app shell is cached; bump VERSION on every release.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL = [
   './', 'index.html', 'app.css', 'manifest.webmanifest',
-  'js/app.js', 'js/model.js', 'js/analysis.js', 'js/db.js', 'js/format.js',
+  'js/app.js', 'js/model.js', 'js/analysis.js', 'js/invoice.js', 'js/db.js', 'js/format.js',
   'fonts/Vazirmatn.woff2', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 

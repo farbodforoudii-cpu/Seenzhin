@@ -1,6 +1,6 @@
 // IndexedDB: products, photos (compressed JPEG blobs) and key/value settings. Everything stays on this device.
 const DB_NAME = 'seenzhin';
-const VERSION = 1;
+const VERSION = 2; // 2: invoices
 
 let dbp = null;
 function open() {
@@ -9,7 +9,7 @@ function open() {
     const req = indexedDB.open(DB_NAME, VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      for (const s of ['products', 'photos']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
+      for (const s of ['products', 'photos', 'invoices']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
     };
     req.onsuccess = () => resolve(req.result);
