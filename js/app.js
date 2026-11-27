@@ -10,6 +10,7 @@ import { sync } from './sync.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
+const APP_VERSION = '۱۹';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -112,7 +113,12 @@ async function boot() {
   sync.onChange(() => { if (S.tab === 'settings' && !$('#sheet').classList.contains('open')) render(); });
   await sync.init();
   loadMarket();
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    // A new version takes over → reload once, so both phones are always on the latest app without reopening.
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had && !boot.reloaded) { boot.reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register('sw.js').then(r => r.update()).catch(() => {});
+  }
 }
 const saveSettings = () => db.set('settings', S.settings);
 
@@ -427,7 +433,8 @@ function viewSettings() {
   </div><p class="foot">این‌ها فقط روی همین دستگاه می‌مانند و روی هر فاکتور چاپ می‌شوند.</p>`;
   h += `<div class="stitle">پشتیبان</div><div class="group enter"><button class="cell" data-export><span>گرفتن فایل پشتیبان</span>${svg('chev')}</button>
     <label class="cell"><span>بازگردانی از فایل</span>${svg('chev')}<input type="file" accept="application/json" data-import hidden></label></div>
-    <p class="foot">داده‌ها فقط روی همین دستگاه است؛ هر چند وقت یک پشتیبان بگیرید.</p>`;
+    <p class="foot">داده‌ها روی همین دستگاه و، با حساب مشترک، روی سرور است؛ هر چند وقت یک پشتیبان بگیرید.</p>
+    <p class="foot ver">نسخهٔ اپ: ${APP_VERSION}</p>`;
   return h;
 }
 

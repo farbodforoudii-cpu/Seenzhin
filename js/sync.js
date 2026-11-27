@@ -159,6 +159,7 @@ export const sync = {
   async joinCode(input) {
     const t = String(input || '').trim().replace(/\s+/g, '');
     const m = t.match(/^(?:([^~]*)~)?(SZ1-[0-9a-f]{64})$/i);
+    if (/^[A-Z2-9]{4}$/i.test(t)) throw new Error('این «شناسهٔ حساب» است، نه کد اتصال. روی گوشی سروین: تنظیمات ← «کپی کد اتصال برای گوشی دیگر».');
     if (!m) throw new Error('این کد کامل نیست؛ کد را دوباره از گوشی دیگر کپی کنید.');
     const key = 'SZ1-' + m[2].slice(4).toLowerCase();
     try { await rpc('eco_pull', { p_key: key, p_app: APP, p_limit: 1 }); }
