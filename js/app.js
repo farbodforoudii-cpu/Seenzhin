@@ -1,7 +1,7 @@
 import { db, requestPersistence } from './db.js';
 import {
   FORMULAS, CATEGORIES, LEVELS, MATERIALS, STATUSES, ROUNDING,
-  defaultSettings, catOf, formulaOf, matOf, levelOf, supplierOf, price, drifted, setupSteps,
+  defaultSettings, catOf, formulaOf, matOf, levelOf, supplierOf, price, drifted, setupSteps, unitsOf,
 } from './model.js';
 import { fmt, fmtDec, iso, parseNum, esc, faDigits, short, shortParts } from './format.js';
 import { insights, suggestInvoice, marketGap, shownPrice, jobsFor } from './analysis.js';
@@ -98,6 +98,7 @@ async function load() {
   S.logo = lg ? URL.createObjectURL(lg) : null;
   S.log = (await db.all('log')).sort((a, b) => b.at - a.at).slice(0, 300);
   S.who = (await db.get('who')) || '';
+  refreshUnits();
   S.jobs = (await db.get('jobs')) || { day: '', id: null, snooze: {}, rest: false };
 }
 async function boot() {
@@ -124,12 +125,23 @@ async function boot() {
 }
 const saveSettings = () => db.set('settings', S.settings);
 
+// Ready pieces of every design, from the invoices; status follows (available / reserved / sold out).
+// The stored `status` is only read for products from before counts existed; it is never rewritten.
+S.units = new Map();
+const paidOf = inv => totals(inv).status === 'paid';
+function refreshUnits() {
+  S.units = new Map(S.products.map(p => [p.id, unitsOf(p, S.invoices, paidOf)]));
+}
+const unitsFor = p => S.units.get(p.id) || unitsOf(p, S.invoices, paidOf);
+// Products with their units, for the analysis.
+const view = () => S.products.map(p => ({ ...p, ...unitsFor(p) }));
+
 // Before v23 a paid invoice overwrote the product's library price with the sale price.
-// Once per product: move that price to soldPrice and give the library its own price back (formula or manual final).
+// Once per product (invoices from v23 on carry paidAt and are skipped): move that price to soldPrice and give the library its own price back (formula or manual final).
 async function repairSold() {
   const now = Date.now(), fixed = [];
   for (const inv of S.invoices) {
-    if (totals(inv).status !== 'paid') continue;
+    if (totals(inv).status !== 'paid' || inv.paidAt) continue;
     for (const it of inv.items || []) {
       const p = S.products.find(x => x.id === it.productId);
       if (!p || p.status !== 'sold' || p.soldPrice != null) continue;
@@ -139,7 +151,7 @@ async function repairSold() {
       fixed.push(p);
     }
   }
-  if (fixed.length) { await db.putMany('products', fixed); render(); }
+  if (fixed.length) { await db.putMany('products', fixed); refreshUnits(); render(); }
 }
 
 // Today's silver (999) and 18k gold per gram in toman, from hesab-man's tgju feed on the same GitHub Pages site.
@@ -192,7 +204,7 @@ function line(x) {
 // One small job a day (never more): picked from jobsFor, kept for the day, «بعداً» rests it for 3 days.
 function todayJob() {
   const J = S.jobs, today = new Date().toDateString(), now = Date.now();
-  const list = jobsFor(S.products, S.settings, now).filter(j => !(J.snooze[j.id] > now));
+  const list = jobsFor(view(), S.settings, now).filter(j => !(J.snooze[j.id] > now));
   if (J.day === today) {
     if (J.rest) return null;
     const still = J.id && list.find(j => j.id === J.id);
@@ -227,16 +239,17 @@ function todo() {
 }
 
 function viewHome() {
-  const stock = S.products.filter(p => p.status !== 'sold');
-  const value = stock.reduce((a, p) => a + (shownPrice(p, S.settings) || 0), 0);
-  const avail = stock.filter(p => p.status === 'available').length, res = stock.length - avail;
+  const U = p => unitsFor(p);
+  const stock = S.products.filter(p => U(p).status !== 'sold');
+  const value = stock.reduce((a, p) => a + (shownPrice(p, S.settings) || 0) * (U(p).left + U(p).held), 0);
+  const avail = stock.reduce((a, p) => a + U(p).left, 0), res = stock.reduce((a, p) => a + U(p).held, 0);
   const list = S.products.filter(p => S.filter === 'all' || p.cat === S.filter);
   const T = todo();
   const sp = shortParts(value);
   let h = `<div class="brand-top"><img class="brand-logo" src="brand/logo-sun.png" alt="سینژین"></div>` + head('ویترین', 'سینژین', `<button class="add-pill" data-new>${svg('plus')}<span>محصول</span></button>`);
   h += `<section class="hero enter"><span class="hero-k">ارزش ویترین</span>
     ${value ? `<div class="hero-n"><b data-count="${value}">${sp.num}</b><small>${sp.unit}</small></div>` : `<div class="hero-n empty"><b>${stock.length ? 'هنوز قیمتی ثبت نشده' : 'خالی'}</b></div>`}
-    <span class="hero-s">${say(stock.length ? `جمع قیمت فروش ${avail} محصول موجود${res ? ` و ${res} رزرو` : ''}` : 'هنوز محصولی ثبت نشده است')}</span></section>`;
+    <span class="hero-s">${say(stock.length ? `جمع قیمت فروش ${avail} عدد آماده${res ? ` و ${res} رزرو` : ''}` : 'هنوز محصولی ثبت نشده است')}</span></section>`;
   h += jobCard();
   if (T.length) h += `<div class="stitle">کارهای امروز</div><div class="group enter">${T.map(line).join('')}</div>`;
   if (S.products.length) {
@@ -250,13 +263,20 @@ function viewHome() {
   return h;
 }
 
+// Badge: how many are ready when more than one, reserved, or sold out.
+function badge(p) {
+  const u = unitsFor(p);
+  if (u.left > 1) return `<span class="badge">${faDigits(u.left)} عدد</span>`;
+  if (u.left === 1) return '';
+  return `<span class="badge s-${u.status}">${STATUSES.find(s => s.id === u.status).name}</span>`;
+}
 function card(p) {
   const v = shownPrice(p, S.settings);
   const ph = p.photos && p.photos[0] && urls.get(p.photos[0]);
   const name = p.title || [p.sub, levelOf(p.level) && levelOf(p.level).name].filter(Boolean).join('، ') || 'بی‌نام';
   return `<button class="pcard enter" data-edit="${p.id}">
     <div class="thumb">${ph ? `<img src="${ph}" alt="" loading="lazy">` : `<span class="noimg">${esc(p.sub || (catOf(p.cat) || {}).name || '')}</span>`}
-      ${p.status !== 'available' ? `<span class="badge s-${p.status}">${STATUSES.find(s => s.id === p.status).name}</span>` : ''}</div>
+      ${badge(p)}</div>
     <div class="pmeta"><span class="pname">${esc(name)}</span><span class="pprice ${v == null ? 'none' : ''}">${v == null ? 'بدون قیمت' : short(v) + ' <small>تومان</small>'}</span></div></button>`;
 }
 
@@ -271,8 +291,8 @@ function ring(label, p, num, unit, sub, tone = '') {
 function viewAnalysis() {
   let h = head('تحلیل', 'سینژین در یک نگاه');
   if (!S.products.length) return h + `<div class="empty enter"><p>تحلیل بعد از ثبت چند محصول ساخته می‌شود.</p><button class="btn" data-new>ثبت محصول</button></div>`;
-  const { A, items } = insights(S.products, S.settings, S.market);
-  const all = S.products.length, soldAll = S.products.filter(p => p.status === 'sold').length;
+  const { A, items } = insights(view(), S.settings, S.market);
+  const all = S.products.length;
   // One sentence first (logic), then the numbers (rings), then the details.
   const verdict = A.margin == null ? `ویترین ${A.stockCount} محصول دارد؛ برای دیدن سود، قیمت‌ها را کامل کنید.`
     : `ویترین ${plain(A.value)} تومان می‌ارزد و ${Math.round(A.margin * 100)}٪ آن سود است.`;
@@ -289,7 +309,7 @@ function viewAnalysis() {
     const mx = Math.max(1, ...cats.map(c => c.stock));
     h += `<div class="stitle">دسته‌ها</div><div class="group enter">${cats.map(c => `<div class="cell col"><div class="crow"><b>${c.name}</b><span class="sec">${say(`${c.stock} موجود${c.sold30 ? `، ${c.sold30} فروش` : ''}`)}</span></div>
       <i class="bar"><em style="width:${Math.round(c.stock / mx * 100)}%"></em></i></div>`).join('')}</div>
-      <p class="foot">${say(`طول نوار = تعداد محصول موجود هر دسته. تا امروز ${soldAll} محصول فروخته شده است.`)}</p>`;
+      <p class="foot">${say(`طول نوار = تعداد آمادهٔ هر دسته. تا امروز ${faDigits(S.products.reduce((a, p) => a + unitsFor(p).soldAll, 0))} عدد با فاکتور فروخته شده است.`)}</p>`;
   }
   return h;
 }
@@ -344,7 +364,7 @@ function saleNote(it) {
 function drawInvoice() {
   const d = S.inv.d, panel = $('#sheet .panel');
   const chosen = new Set(d.items.map(i => i.productId).filter(Boolean));
-  const sellable = S.products.filter(p => (p.status !== 'sold' || chosen.has(p.id)) && shownPrice(p, S.settings) != null);
+  const sellable = S.products.filter(p => (unitsFor(p).left > 0 || chosen.has(p.id)) && shownPrice(p, S.settings) != null);
   const names = [...new Set(S.invoices.map(i => i.customer && i.customer.name).filter(Boolean))];
   const t = totals(d);
   const nf = (key, label, val, ph) => `<label class="cell"><span>${label}</span><input class="bare" data-inum="${key}" inputmode="numeric" placeholder="${ph}" value="${val == null ? '' : fmt(val)}"><em class="u">تومان</em></label>`;
@@ -410,24 +430,18 @@ async function saveInvoice() {
   if (!d.items.length) return island('یک محصول را از بالا انتخاب کنید');
   const t = totals(d);
   const undo = await snap({ invoices: [d.id], products: d.items.map(it => it.productId).filter(Boolean) });
+  // When it was paid in full: sales and ready counts are worked out from this.
+  if (t.status === 'paid') d.paidAt = d.paidAt || now; else delete d.paidAt;
   await db.put('invoices', d);
   const i = S.invoices.findIndex(x => x.id === d.id);
   if (i >= 0) S.invoices[i] = d; else S.invoices.unshift(d);
-  // Products follow the invoice: paid in full → sold; deposit or unpaid → reserved.
-  // The sale price lives on the invoice (and as soldPrice for reports); the library price never changes here.
-  const changed = [];
-  for (const it of d.items) {
-    const p = S.products.find(x => x.id === it.productId);
-    if (!p) continue;
-    if (t.status === 'paid') { if (p.status !== 'sold') p.soldAt = d.date; p.status = 'sold'; p.soldPrice = it.price; p.soldInvoice = d.id; p.updatedAt = now; }
-    else if (p.status !== 'sold') p.status = 'reserved';
-    changed.push(p);
-  }
-  if (changed.length) await db.putMany('products', changed);
+  // Products follow the invoice by themselves: a paid one is a sale, a deposit or unpaid one holds a piece.
+  // The sale price lives on the invoice; the library price never changes here.
+  refreshUnits();
   S.tab = 'sales'; render();
   logEvent(`فاکتور ${noFa(d.no)} را ساخت${d.customer.name ? ` برای ${d.customer.name}` : ''}؛ ${plain(t.total)} تومان، ${STATUS_NAME[t.status]}`);
   await showInvoice(d.id);
-  offerUndo(t.status === 'paid' ? 'فاکتور ساخته شد؛ محصولات فروخته‌شده ثبت شدند' : 'فاکتور ساخته شد؛ محصولات رزرو شدند', async () => { closeSheet(); await undo(); });
+  offerUndo(t.status === 'paid' ? 'فاکتور ساخته شد؛ فروش ثبت شد' : 'فاکتور ساخته شد؛ محصول رزرو شد', async () => { closeSheet(); await undo(); });
 }
 
 // ---------- settings: grouped like iOS settings ----------
@@ -514,8 +528,17 @@ function closeSheet() {
   $('#sheet').classList.remove('open'); document.body.classList.remove('locked');
   setTimeout(() => { if (!$('#sheet').classList.contains('open')) $('#sheet').innerHTML = ''; }, 320);
 }
+// How many of this design are ready to sell; sales and reservations come from the invoices.
+function stockBox(d) {
+  const u = S.ed.edit ? unitsFor(d) : { held: 0, soldAll: 0 };
+  const facts = [u.held ? `${faDigits(u.held)} رزرو در فاکتور` : '', u.soldAll ? `${faDigits(u.soldAll)} فروخته تا امروز` : ''].filter(Boolean).join('، ');
+  return `<div class="stitle">موجودی</div><div class="group"><div class="cell"><span>آماده برای فروش</span>
+    <span class="qty"><button class="pill" data-qty="-1" aria-label="یکی کمتر">−</button><b>${faDigits(d._ready)}</b><button class="pill" data-qty="1" aria-label="یکی بیشتر">+</button></span></div></div>
+    <p class="foot">${say(`با هر فاکتور تسویه‌شده یکی کم می‌شود؛ فاکتور بیعانه یکی را رزرو می‌کند.${facts ? ' ' + facts + '.' : ''} اگر دوباره ساختید، اینجا اضافه کنید.`)}</p>`;
+}
 function openEditor(p, step) {
   const d = p ? Object.assign(blank(), JSON.parse(JSON.stringify(p)), { _added: [] }) : blank();
+  d._ready = p ? unitsFor(p).left : 1;
   S.ed = { d, step: step ?? (p ? 4 : 0), edit: !!p };
   openSheet('');
   drawEditor();
@@ -678,8 +701,8 @@ function summary(d, r) {
     ${d.finalPrice ? `<button class="cell" data-clearfinal><span class="sec">برگشت به قیمت فرمول${formula ? say(` (${plain(formula)} تومان)`) : ''}</span></button>` : ''}</div>
     <p class="foot">اگر می‌خواهید این محصول قیمتی جز فرمول داشته باشد. برای یک فروش خاص، قیمت را در خود فاکتور عوض کنید.</p>`;
   h += `<div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}</div>`;
-  h += `<p class="lab2">وضعیت</p>${chips('status', STATUSES, d.status)}`;
-  h += `<div class="ed-foot">${S.ed.edit ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>مشابه</button>${d.status !== 'sold' && r.complete ? `<button class="btn ghost" data-sell="${d.id}">فاکتور</button>` : ''}` : ''}<button class="btn" data-save>${S.ed.edit ? 'ذخیره' : 'ذخیره در ویترین'}</button></div>`;
+  h += stockBox(d);
+  h += `<div class="ed-foot">${S.ed.edit ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>مشابه</button>${d._ready > 0 && r.complete ? `<button class="btn ghost" data-sell="${d.id}">فاکتور</button>` : ''}` : ''}<button class="btn" data-save>${S.ed.edit ? 'ذخیره' : 'ذخیره در ویترین'}</button></div>`;
   return h;
 }
 
@@ -710,15 +733,17 @@ async function compress(file) {
 async function save() {
   const d = S.ed.d, r = price(d, S.settings), now = Date.now();
   const prev = S.ed.edit ? S.products.find(x => x.id === d.id) : null;
-  const { _added, ...clean } = d;
+  const { _added, _ready, ...clean } = d;
   const undo = await snap({ products: d.id ? [d.id] : [], photos: prev ? (prev.photos || []).filter(id => !d.photos.includes(id)) : [] });
   const p = Object.assign(clean, { id: d.id || uid(), createdAt: d.createdAt || now, updatedAt: now, approved: r.complete ? { price: r.final, at: now } : null });
-  if (p.status === 'sold' && !(prev && prev.status === 'sold')) p.soldAt = now;
-  if (p.status !== 'sold') { delete p.soldAt; delete p.soldPrice; delete p.soldInvoice; }
+  // Ready count changed by hand (or a new product): it becomes the new starting point; open invoices still hold theirs.
+  const was = prev ? unitsFor(prev) : null;
+  if (!was || _ready !== was.left) { p.stock = _ready + (was ? was.held - was.manual : 0); p.stockAt = now; }
   if (prev) for (const id of prev.photos || []) if (!p.photos.includes(id)) { await db.del('photos', id); urls.delete(id); }
   await db.put('products', p);
   const i = S.products.findIndex(x => x.id === p.id);
   if (i >= 0) S.products[i] = p; else S.products.unshift(p);
+  refreshUnits();
   S.ed.d._added = [];
   await closeEditor();
   const nm = p.title || p.sub || 'بی‌نام';
@@ -726,7 +751,7 @@ async function save() {
   else {
     const ch = [];
     if ((prev.approved && prev.approved.price) !== (p.approved && p.approved.price)) ch.push(p.approved ? `قیمت ${plain(p.approved.price)} تومان` : 'قیمت ناقص');
-    if (prev.status !== p.status) ch.push(STATUSES.find(x => x.id === p.status).name);
+    if (was && _ready !== was.left) ch.push(`آماده ${faDigits(_ready)} عدد`);
     if (prev.invoice !== p.invoice && p.invoice != null) ch.push(`فاکتور کارگاه ${plain(p.invoice)}`);
     logEvent(`محصول «${nm}» را ویرایش کرد${ch.length ? '؛ ' + ch.join('، ') : ''}`);
   }
@@ -811,7 +836,7 @@ function bind() {
     if ('syncnow' in ds) return sync.run();
     if ('joblater' in ds) { const J = S.jobs; J.snooze[J.id] = Date.now() + 3 * 864e5; J.rest = true; await db.set('jobs', J); render(); return island('باشد؛ امروز کار دیگری پیشنهاد نمی‌شود'); }
     if ('jobprompt' in ds) {
-      const j = jobsFor(S.products, S.settings).find(x => x.id === S.jobs.id);
+      const j = jobsFor(view(), S.settings).find(x => x.id === S.jobs.id);
       if (!j) return;
       try { await navigator.clipboard.writeText(j.prompt); island('پرامپت کپی شد؛ در ChatGPT بچسبانید و جواب را اینجا وارد کنید'); }
       catch { prompt('این متن را کپی کنید و در ChatGPT بچسبانید:', j.prompt); }
@@ -856,7 +881,7 @@ function bind() {
       if ('isave' in ds) return saveInvoice();
       if ('idel' in ds) {
         const undo = await snap({ invoices: [d.id] });
-        await db.del('invoices', d.id); S.invoices = S.invoices.filter(i => i.id !== d.id);
+        await db.del('invoices', d.id); S.invoices = S.invoices.filter(i => i.id !== d.id); refreshUnits();
         S.inv = null; closeSheet(); render(); logEvent(`فاکتور ${noFa(d.no)} را حذف کرد`); return offerUndo('فاکتور حذف شد', undo);
       }
     }
@@ -874,6 +899,7 @@ function bind() {
     if (ds.step != null) { S.ed.step = Number(ds.step); drawEditor(); $('#sheet .panel').scrollTop = 0; return; }
     if (ds.usesug) { d.invoice = Number(ds.usesug); return drawEditor(); }
     if ('clearfinal' in ds) { d.finalPrice = null; return drawEditor(); }
+    if (ds.qty) { d._ready = Math.max(0, d._ready + Number(ds.qty)); return drawEditor(); }
     if (ds.usecalc) { d.invoice = Number(ds.usecalc); return drawEditor(); }
     if (ds.fixinv) { d.invoice = d.invoice * Number(ds.fixinv); return drawEditor(); }
     if (ds.rmphoto) {

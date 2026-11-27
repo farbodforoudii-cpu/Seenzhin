@@ -34,7 +34,7 @@ export const MATERIALS = [
 export const STATUSES = [
   { id: 'available', name: 'موجود' },
   { id: 'reserved', name: 'رزرو' },
-  { id: 'sold', name: 'فروخته‌شده' },
+  { id: 'sold', name: 'تمام شد' },
 ];
 
 export const ROUNDING = [0, 10000, 100000, 1000000];
@@ -165,4 +165,26 @@ export function setupSteps(settings, products) {
     { id: 'factors', text: 'ضریب سطح‌ها را وارد کنید', done: anyFactor, go: 'settings' },
     { id: 'first', text: 'اولین محصول را ثبت کنید', done: products.length > 0, go: 'price' },
   ];
+}
+
+// Units of a design, worked out from the invoices (never a counter, so two phones selling at once cannot lose a sale).
+// stock = how many Servin said were ready at stockAt (reserved ones included);
+// left = stock − sold after stockAt (paid invoices) − held by open invoices (deposit or unpaid).
+// Products from before counts existed were single pieces: one (or as many as were sold), none if marked sold without an invoice.
+export function unitsOf(p, invoices, paidOf) {
+  let sold = 0, held = 0, soldAll = 0;
+  const sales = [], since = p.stockAt || 0;
+  for (const inv of invoices) for (const it of inv.items || []) {
+    if (it.productId !== p.id) continue;
+    const q = it.qty || 1;
+    if (paidOf(inv)) { const at = inv.paidAt ?? inv.date; soldAll += q; sales.push({ price: it.price, at, qty: q }); if (at > since) sold += q; }
+    else held += q;
+  }
+  const stock = typeof p.stock === 'number' ? p.stock : soldAll || (p.status === 'sold' ? 0 : 1);
+  // Reserved by hand before counts existed (no invoice): that one piece stays reserved until Servin sets a count.
+  const manual = typeof p.stock !== 'number' && p.status === 'reserved' && !held && !soldAll ? 1 : 0;
+  held += manual;
+  const left = Math.max(0, stock - sold - held);
+  const status = left > 0 ? 'available' : held > 0 ? 'reserved' : 'sold';
+  return { stock, left, held, soldAll, sales, status, manual };
 }

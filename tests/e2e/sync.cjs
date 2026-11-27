@@ -38,11 +38,11 @@ const USER = 'zz-test-' + Date.now().toString(36), PASS = 'test-pass-123';
   console.log('wrong code:', await C.p.textContent('#island'));
   await B.p.click('[data-tab="home"]'); await B.p.waitForTimeout(500);
   console.log('B sees product:', await B.p.locator('.pname', { hasText: 'تندیس آزمون همگام' }).count());
-  // change on B (status reserved) → appears on A after a sync run
-  await B.p.click('.pcard'); await B.p.waitForTimeout(500); await B.p.click('[data-set="status"][data-val="reserved"]'); await B.p.click('[data-save]'); await B.p.waitForTimeout(4500);
+  // change on B (two more ready) → appears on A after a sync run
+  await B.p.click('.pcard'); await B.p.waitForTimeout(500); await B.p.click('[data-qty="1"]'); await B.p.click('[data-qty="1"]'); await B.p.click('[data-save]'); await B.p.waitForTimeout(4500);
   await A.p.click('[data-tab="settings"]'); await A.p.click('[data-syncnow]'); await A.p.waitForTimeout(4000);
   await A.p.click('[data-tab="home"]'); await A.p.waitForTimeout(400);
-  console.log('A sees reserved:', await A.p.locator('.badge.s-reserved').count());
+  console.log('A sees 3 ready:', await A.p.locator('.badge', { hasText: '۳ عدد' }).count());
   await A.p.click('[data-tab="settings"]'); await A.p.waitForTimeout(300);
   await A.p.screenshot({ path: (process.env.OUT || '/tmp/seenzhin-shots/') + 'sync-settings.png' });
   console.log('user', USER, 'errors', A.errs, B.errs);

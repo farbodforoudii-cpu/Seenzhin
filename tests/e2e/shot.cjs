@@ -84,7 +84,8 @@ const OUT = (process.env.OUT || '/tmp/seenzhin-shots/');
     require('fs').writeFileSync(OUT + scheme + '-invoice.png', Buffer.from(src.split(',')[1], 'base64'));
     await pg.click('.panel [data-back]'); await pg.waitForTimeout(500);
     await pg.screenshot({ path: OUT + scheme + '-sales.png' });
-    const st = await pg.evaluate(() => new Promise(r => { const q = indexedDB.open('seenzhin', 3); q.onsuccess = () => { const t = q.result.transaction('products').objectStore('products').get('p5'); t.onsuccess = () => r(t.result.status); }; }));
+    await pg.click('[data-tab="home"]'); await pg.waitForTimeout(500);
+    const st = await pg.locator('[data-edit="p5"] .badge').innerText().catch(() => 'none');  // status comes from the invoices
     console.log(scheme, 'p5 status after deposit invoice:', st);
     if (scheme === 'light') { await pg.setViewportSize({ width: 1024, height: 1366 }); await pg.click('[data-tab="home"]'); await pg.waitForTimeout(800); await pg.screenshot({ path: OUT + 'ipad-home.png' }); }
     await ctx.close();

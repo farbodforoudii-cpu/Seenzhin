@@ -85,3 +85,29 @@ console.log('model ok');
   assert.equal(drifted([{ ...p, finalPrice: 7300000, approved: { price: 7300000 } }], s5).length, 0);
   console.log('manual final ok');
 }
+
+// Ready units come from invoices: paid after stockAt sells one, an open invoice holds one.
+{
+  const { unitsOf } = await import('../js/model.js');
+  const paid = i => i.paid >= 10;
+  const inv = [{ items: [{ productId: 'x', price: 10 }], paid: 10, paidAt: 200 }, { items: [{ productId: 'x', price: 10 }], paid: 2, date: 300 },
+    { items: [{ productId: 'x', price: 8 }], paid: 10, paidAt: 50 }];
+  const u = unitsOf({ id: 'x', stock: 3, stockAt: 100 }, inv, paid);
+  assert.equal(u.left, 1); assert.equal(u.held, 1); assert.equal(u.soldAll, 2); assert.equal(u.status, 'available');
+  assert.equal(unitsOf({ id: 'x', stock: 2, stockAt: 100 }, inv, paid).status, 'reserved');
+  assert.equal(unitsOf({ id: 'y', status: 'sold' }, inv, paid).status, 'sold');           // old product marked sold
+  assert.equal(unitsOf({ id: 'x', status: 'sold' }, inv.slice(0, 1), paid).left, 0);     // old sale: one piece, sold
+  assert.equal(unitsOf({ id: 'z', status: 'available' }, [], paid).left, 1);            // old product: one piece
+  assert.equal(unitsOf({ id: 'r', status: 'reserved' }, [], paid).status, 'reserved');  // old manual reservation
+  console.log('units ok');
+}
+
+// Status is never fed back: an old product whose invoice was deleted is one ready piece again.
+{
+  const { unitsOf } = await import('../js/model.js');
+  const paid = i => i.paid >= 10;
+  assert.equal(unitsOf({ id: 'a', status: 'available' }, [{ items: [{ productId: 'a', price: 5 }], paid: 1 }], paid).status, 'reserved');
+  assert.equal(unitsOf({ id: 'a', status: 'available' }, [], paid).status, 'available');
+  assert.equal(unitsOf({ id: 'r', status: 'reserved' }, [{ items: [{ productId: 'r', price: 5 }], paid: 10, paidAt: 1 }], paid).status, 'sold'); // old reservation, then paid
+  console.log('units feedback ok');
+}
