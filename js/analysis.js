@@ -53,11 +53,18 @@ export function analyse(products, st, now = Date.now()) {
   };
 }
 
-// Suggest a workshop invoice from similar products (same type and level): the median, with how many it is based on.
+// Suggest a workshop invoice from products that already have one: same type and level first, then the same
+// category. The median, with how many it rests on and what they have in common.
 export function suggestInvoice(products, d) {
-  if (!d.sub || !d.level) return null;
-  const xs = products.filter(p => p.id !== d.id && p.sub === d.sub && p.level === d.level && typeof p.invoice === 'number').map(p => p.invoice);
-  return xs.length >= 2 ? { value: median(xs), n: xs.length } : null;
+  if (!d.cat) return null;
+  const has = products.filter(p => p.id !== d.id && typeof p.invoice === 'number' && p.invoice >= 10000);
+  const tiers = [
+    [has.filter(p => p.sub === d.sub && p.level === d.level), 'هم‌نوع و هم‌سطح'],
+    [has.filter(p => p.sub === d.sub), 'هم‌نوع'],
+    [has.filter(p => p.cat === d.cat), 'هم‌دسته'],
+  ];
+  for (const [xs, basis] of tiers) if (d.sub || basis === 'هم‌دسته') if (xs.length) return { value: median(xs.map(p => p.invoice)), n: xs.length, basis };
+  return null;
 }
 
 // Market price check: how far the saved metal price is from today's market (hesab-man's tgju feed).

@@ -1,6 +1,6 @@
 // IndexedDB: products, photos (compressed JPEG blobs) and key/value settings. Everything stays on this device.
 const DB_NAME = 'seenzhin';
-const VERSION = 2; // 2: invoices
+const VERSION = 3; // 2: invoices, 3: activity log
 
 let dbp = null;
 function open() {
@@ -9,7 +9,7 @@ function open() {
     const req = indexedDB.open(DB_NAME, VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      for (const s of ['products', 'photos', 'invoices']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
+      for (const s of ['products', 'photos', 'invoices', 'log']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
     };
     req.onsuccess = () => resolve(req.result);
@@ -29,7 +29,7 @@ function run(store, mode, fn) {
 
 // Writes that sync should know about. Set by sync.js while signed in; null otherwise.
 export const changes = { onWrite: null };
-const SYNCED = { products: 'product', invoices: 'invoice', photos: 'photo' };
+const SYNCED = { products: 'product', invoices: 'invoice', photos: 'photo', log: 'log' };
 const SYNCED_KV = ['settings', 'logo'];
 const note = (store, ids, deleted = false) => changes.onWrite && SYNCED[store] && changes.onWrite(SYNCED[store], ids, deleted);
 const noteKv = key => changes.onWrite && SYNCED_KV.includes(key) && changes.onWrite('kv', [key], false);

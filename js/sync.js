@@ -31,6 +31,13 @@ export async function deriveKey(user, pass) {
   return 'SZ1-' + [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 export const cleanUser = u => String(u || '').trim().toLowerCase();
+// A short public fingerprint of the account (4 letters): two phones are in the same account only if it matches.
+async function fingerprint(key) {
+  if (!key) return '';
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('fp:' + key)));
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return [...h.slice(0, 4)].map(b => A[b % 32]).join('');
+}
 
 const recId = (kind, key) => `s:${kind}:${key}`;
 const saveMeta = () => raw.set('syncMeta', S.meta);
@@ -56,7 +63,7 @@ async function pull() {
     const rows = await rpc('eco_pull', { p_key: S.key, p_app: APP, p_after: S.cursor, p_limit: 200 });
     for (const { data: d } of rows) {
       if (S.meta.at[d.id] && S.meta.at[d.id] >= d.updatedAt) continue;
-      const store = { product: 'products', invoice: 'invoices', photo: 'photos' }[d.kind];
+      const store = { product: 'products', invoice: 'invoices', photo: 'photos', log: 'log' }[d.kind];
       if (store) {
         if (d.deleted) await raw.del(store, d.key);
         else if (d.kind === 'photo') await raw.put('photos', { id: d.key, blob: await dataToBlob(d.value) });
@@ -87,7 +94,7 @@ async function push() {
     if (S.meta.gone[r]) { small.push({ ...base, deleted: true }); continue; }
     if (kind === 'photo') { const p = await db.getOne('photos', key); if (p) photos.push({ ...base, value: await blobToData(p.blob) }); else delete S.meta.dirty[r]; continue; }
     if (kind === 'kv') { const v = await db.get(key); small.push({ ...base, value: key === 'logo' ? (v ? await blobToData(v) : null) : v ?? null }); continue; }
-    const v = await db.getOne(kind === 'product' ? 'products' : 'invoices', key);
+    const v = await db.getOne({ product: 'products', invoice: 'invoices', log: 'log' }[kind], key);
     if (v) small.push({ ...base, value: v }); else delete S.meta.dirty[r];
   }
   const send = async chunk => {
@@ -105,6 +112,7 @@ async function seed() {
   const mark = r => { if (!S.meta.at[r]) { S.meta.at[r] = now; S.meta.dirty[r] = true; } };
   for (const p of await db.all('products')) mark(recId('product', p.id));
   for (const i of await db.all('invoices')) mark(recId('invoice', i.id));
+  for (const l of await db.all('log')) mark(recId('log', l.id));
   for (const p of await db.all('photos')) mark(recId('photo', p.id));
   for (const k of ['settings', 'logo']) if ((await db.get(k)) != null) mark(recId('kv', k));
   await saveMeta();
@@ -121,6 +129,7 @@ export const sync = {
     S.cursor = (await db.get('syncCursor')) || null;
     S.last = (await db.get('syncLast')) || null;
     S.meta = (await db.get('syncMeta')) || S.meta;
+    S.fp = await fingerprint(S.key);
     S.status = S.key ? 'idle' : 'off';
     changes.onWrite = S.key ? track : null;
     addEventListener('online', () => sync.run());
@@ -142,7 +151,7 @@ export const sync = {
       if (!(await confirmNew(user))) return false;
       await rpc('eco_create_space', { p_key: key }).catch(err => { throw new Error(persian(err)); });
     }
-    S.key = key; S.user = user; S.cursor = null;
+    S.key = key; S.user = user; S.cursor = null; S.fp = await fingerprint(key);
     S.meta = { at: {}, dirty: {}, gone: {} };
     await raw.set('syncKey', key); await raw.set('syncUser', user); await raw.set('syncCursor', null); await saveMeta();
     changes.onWrite = track;
@@ -158,7 +167,7 @@ export const sync = {
 
   // Leave the account on this device only; data here and on the server stay.
   async signOut() {
-    S.key = null; S.user = null; S.cursor = null; S.status = 'off';
+    S.key = null; S.user = null; S.cursor = null; S.fp = ''; S.status = 'off';
     changes.onWrite = null;
     await raw.set('syncKey', null); await raw.set('syncUser', null);
     emit();
