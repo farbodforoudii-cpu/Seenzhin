@@ -53,20 +53,11 @@ export function analyse(products, st, now = Date.now()) {
   };
 }
 
-// Suggest a workshop invoice when it is empty.
-// Cast pieces (Seenzhin's own silver or gold, not hand-built panels): weight × casting fee per gram, plus the
-// workshop's other jobs, learnt as the median of (real invoice − its casting) over products that have an invoice.
-// Otherwise: the median invoice of similar products (same type and level, then type, then category).
-const castable = (p, st) => p.cat !== 'panel' && ['silver', 'gold'].includes(p.material) && supplierOf(st, p.material) === 'self';
-export function suggestInvoice(products, d, st = {}) {
+// Suggest an outside workshop invoice (e.g. a bronze piece) from products that have one: same type and level,
+// then type, then category. The median, with how many it rests on.
+export function suggestInvoice(products, d) {
   if (!d.cat) return null;
   const has = products.filter(p => p.id !== d.id && typeof p.invoice === 'number' && p.invoice >= 10000);
-  const cast = st.castPerGram;
-  if (cast && castable(d, st) && d.weight) {
-    const extras = has.filter(p => castable(p, st) && p.weight).map(p => p.invoice - p.weight * cast).filter(x => x > 0);
-    const extra = median(extras) || 0;
-    return { value: Math.round((d.weight * cast + extra) / 10000) * 10000, n: extras.length, basis: 'ریخته‌گری', casting: d.weight * cast, extra };
-  }
   const tiers = [
     [has.filter(p => p.sub === d.sub && p.level === d.level), 'هم‌نوع و هم‌سطح'],
     [has.filter(p => p.sub === d.sub), 'هم‌نوع'],

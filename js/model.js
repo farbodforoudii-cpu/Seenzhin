@@ -51,6 +51,7 @@ export function defaultSettings() {
     markup: null, // material factor on metal + stones
     castPerGram: null, // workshop casting fee per gram (entered in settings)
     teamHourly: null, // value of one hour of the team's own handwork (entered in settings)
+    hoursByLevel: { simple: null, designed: null, special: null }, // usual team hours per level, for suggestions
     rounding: 0,
   };
 }
@@ -92,19 +93,31 @@ export function price(p, settings) {
     lines.push({ label: matOf(p.material).name, how: { kind: 'text', text: 'داخل فاکتور کارگاه' }, value: 0 });
   }
 
-  // 2) stones, 3) workshop invoice
+  // 2) stones and bought parts (hooks, elastic, chain…), entered per product
   const stone = num(p.stone) || 0;
-  if (stone) lines.push({ label: 'سنگ', how: null, value: stone });
-  // 3) The work: an outside workshop invoice, the team's own hand-work hours at the team rate, or both.
-  const inv = num(p.invoice), hours = num(p.hours), rate = num(settings.teamHourly);
-  if (inv == null && !hours) missing.push({ key: 'invoice', text: 'فاکتور کارگاه یا ساعت کار تیم را وارد کنید' });
+  if (stone) lines.push({ label: 'سنگ و قطعه‌ها', how: null, value: stone });
+
+  // 3) The work.
+  // - A cast piece (our own silver or gold, not a hand-built panel): casting = weight × casting fee, automatic.
+  // - The team's own hand-work (finishing, soldering, plating, assembly; or building a panel): hours × team rate.
+  // - An outside workshop invoice, when there is one. If an invoice was entered it is taken as the whole outside
+  //   cost (older products were entered that way), so casting is not added on top of it.
+  const inv = num(p.invoice), hours = num(p.hours), rate = num(settings.teamHourly), fee = num(settings.castPerGram);
+  const castable = formula && formula !== 'panel' && sup === 'self';
+  let casting = 0;
+  if (inv == null && castable && num(p.weight)) {
+    if (fee == null) missing.push({ key: 'cast', text: 'هزینهٔ ریخته‌گری هر گرم در تنظیمات وارد نشده است' });
+    else { casting = num(p.weight) * fee; lines.push({ label: 'ریخته‌گری', how: { kind: 'mul', a: num(p.weight), aUnit: 'گرم', b: fee, bUnit: 'تومان' }, value: casting }); }
+  }
   if (inv != null) lines.push({ label: 'فاکتور کارگاه', how: null, value: inv });
+  else if (sup === 'workshop') missing.push({ key: 'invoice', text: 'فاکتور کارگاه را وارد کنید (فلز را کارگاه داده)' });
+  else if (!hours) missing.push({ key: 'hours', text: 'ساعت کار تیم را وارد کنید' });
   let labour = 0;
   if (hours) {
     if (rate == null) missing.push({ key: 'hourly', text: 'ارزش هر ساعت کار تیم در تنظیمات وارد نشده است' });
     else { labour = hours * rate; lines.push({ label: 'کار تیم', how: { kind: 'mul', a: hours, aUnit: 'ساعت', b: rate, bUnit: 'تومان' }, value: labour }); }
   }
-  const work = (inv || 0) + labour;
+  const work = (inv || 0) + casting + labour;
 
   // 4) Expensive materials (metal we supply + stones) take a small material factor; the workshop work takes the
   // level factor that carries Servin's design value. Pattern used by independent jewellers (Metalsmith Society):
@@ -117,14 +130,14 @@ export function price(p, settings) {
     missing.push({ key: `factor:${formula}:${p.level}`, text: `ضریب «${levelOf(p.level).name}» برای فرمول ${FORMULAS[formula].name} در تنظیمات وارد نشده است` });
   }
 
-  const costKnown = !missing.some(m => ['weight', 'invoice', 'material', 'hourly'].includes(m.key) || m.key.startsWith('price:'));
+  const costKnown = !missing.some(m => ['weight', 'invoice', 'material', 'hourly', 'hours', 'cast'].includes(m.key) || m.key.startsWith('price:'));
   const cost = costKnown ? material + work : null;
   const materialPart = costKnown && (material === 0 || markup != null) ? material * (material ? markup : 0) : null;
   const workPart = costKnown && factor != null ? work * factor : null;
   const internal = materialPart != null && workPart != null ? materialPart + workPart : null;
   const step = settings.rounding || 0;
   const final = internal == null ? null : step ? Math.ceil(internal / step) * step : Math.round(internal);
-  return { formula, lines, cost, material, invoice: inv, labour, work, markup, factor, materialPart, workPart, internal, step, final, missing, complete: final != null };
+  return { formula, lines, cost, material, invoice: inv, casting, labour, work, markup, factor, materialPart, workPart, internal, step, final, missing, complete: final != null };
 }
 
 // Products whose saved price no longer matches today's formula (metal price or factor changed).

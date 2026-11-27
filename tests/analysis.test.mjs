@@ -24,12 +24,3 @@ assert.equal(marketGap(st, { silver: { p: 105000 } })[0].pct.toFixed(2), '0.05')
 assert.equal(marketGap(st, { silver: { p: 101000 } }).length, 0);           // under 2%: no nagging
 console.log('analysis ok');
 
-// casting estimate: weight × fee + median of the workshop's other jobs from real invoices (illustrative numbers)
-{
-  const s3 = defaultSettings(); s3.castPerGram = 50000;
-  const P2 = [{ id: 'a', cat: 'jewelry', sub: 'گوشواره', material: 'silver', weight: 13, invoice: 3000000 }, { id: 'b', cat: 'jewelry', sub: 'سنجاق', material: 'silver', weight: 20, invoice: 3000000 }];
-  const sg = suggestInvoice(P2, { cat: 'jewelry', sub: 'گوشواره', material: 'silver', weight: 14 }, s3);
-  assert.equal(sg.basis, 'ریخته‌گری'); assert.equal(sg.casting, 700000); assert.equal(sg.extra, 2175000); assert.equal(sg.value, 2880000);
-  assert.notEqual(suggestInvoice(P2, { cat: 'panel', sub: 'بزرگ', material: 'silver', weight: 100 }, s3)?.basis, 'ریخته‌گری'); // panels are hand-built
-  console.log('casting estimate ok');
-}
