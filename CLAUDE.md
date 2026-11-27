@@ -2,7 +2,7 @@
 
 Internal app for Seenzhin, a handcrafted brand (silver jewelry, silver panels, bronze sculptures, handmade objects).
 **Main user: Servin** (manages everything alone). **Farbod** supports, trains Servin and does the first data entry.
-Read `docs/DECISIONS.md` first; never re-ask what is decided there.
+Read `docs/DECISIONS.md` first, then `docs/HANDOFF.md` (current state, code map, tests, open tasks); never re-ask what is decided there.
 
 ## Working rules
 - Talk to Farbod in Persian; ask questions one at a time with clickable options.
