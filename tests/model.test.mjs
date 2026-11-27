@@ -42,3 +42,18 @@ assert.equal(d.length, 1);
 assert.equal(d[0].to, Math.round((1800000 + 500000) * 1.3 + 3750000));
 assert.equal(setupSteps(st, []).filter(s => s.done).length, 3);
 console.log('model ok');
+
+// team hours: hand-built panel without a workshop invoice (illustrative numbers)
+{
+  const s2 = defaultSettings();
+  Object.assign(s2, { markup: 2.5, rounding: 1000000, teamHourly: 400000 });
+  s2.prices.silver = 444730; s2.factors.panel.special = 4;
+  const panel = { cat: 'panel', sub: 'بزرگ', level: 'special', material: 'silver', weight: 100 };
+  assert.ok(price(panel, s2).missing.some(m => m.key === 'invoice'));         // neither invoice nor hours yet
+  const r2 = price({ ...panel, hours: 40 }, s2);
+  assert.equal(r2.labour, 16000000);
+  assert.equal(r2.final, 176000000);                                           // 100g×444,730×2.5 + 40h×400k×4 → up to 1M
+  s2.teamHourly = null;
+  assert.ok(price({ ...panel, hours: 40 }, s2).missing.some(m => m.key === 'hourly'));
+  console.log('team hours ok');
+}

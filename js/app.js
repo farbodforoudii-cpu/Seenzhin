@@ -402,6 +402,8 @@ function viewSettings() {
     const sup = st.suppliers[m.id] || m.supplier;
     return `<div class="cell"><span>${m.name}</span><div class="seg"><button class="${sup === 'self' ? 'on' : ''}" data-sup="${m.id}" data-val="self">خودمان</button><button class="${sup === 'workshop' ? 'on' : ''}" data-sup="${m.id}" data-val="workshop">کارگاه</button></div></div>`;
   }).join('')}</div><p class="foot">«کارگاه» یعنی هزینهٔ فلز داخل فاکتور کارگاه است.</p>`;
+  h += `<div class="stitle">هزینهٔ ساخت</div><div class="group enter">${numCell('cast', 'ریخته‌گری هر گرم', 'تومان', st.castPerGram ?? null)}${numCell('hourly', 'هر ساعت کار دستی تیم', 'تومان', st.teamHourly ?? null)}</div>
+    <p class="foot">ریخته‌گری برای برآورد فاکتور کارگاهِ قطعه‌های ریختگی است؛ ساعت کار برای کارهای دستی مثل تابلو.</p>`;
   h += `<div class="stitle">ضریب‌ها</div><div class="group enter">${numCell('markup', 'ضریب متریال', '×', st.markup, true)}
     <div class="cell col"><span class="sec">ضریب سطح</span><div class="ftable"><span></span>${LEVELS.map(l => `<span class="fh">${l.name}</span>`).join('')}
     ${Object.entries(FORMULAS).map(([fid, f]) => `<span class="fl">${f.name}</span>${LEVELS.map(l => {
@@ -465,7 +467,8 @@ function invoiceHint(d) {
   if (d.invoice != null && d.invoice > 0 && d.invoice < 10000) {
     return `${say(`${fmt(d.invoice)} تومان خیلی کم است؛ شاید صفرها جا افتاده.`)} <button class="link" data-fixinv="1000">${say(`${fmt(d.invoice)} هزار`)}</button> <button class="link" data-fixinv="1000000">${say(`${fmt(d.invoice)} میلیون`)}</button>`;
   }
-  const sg = d.invoice == null ? suggestInvoice(S.products, d) : null;
+  const sg = d.invoice == null && !d.hours ? suggestInvoice(S.products, d, S.settings) : null;
+  if (sg && sg.basis === 'ریخته‌گری') return `${say(`پیشنهاد: ${plain(sg.value)} تومان؛ ریخته‌گری ${d.weight} گرم × ${plain(S.settings.castPerGram)} = ${plain(sg.casting)}${sg.extra ? ` + کارهای دیگر ${plain(sg.extra)} (میانهٔ ${sg.n} فاکتور واقعی)` : ''}`)} <button class="link" data-usesug="${sg.value}">همین</button>`;
   if (sg) return `${say(`پیشنهاد: ${plain(sg.value)} تومان (از ${sg.n} محصول ${sg.basis})`)} <button class="link" data-usesug="${sg.value}">همین</button>`;
   return 'مبلغ کامل فاکتور ساخت، از رسید کارگاه.';
 }
@@ -475,7 +478,8 @@ function inlineFix(d) {
   const r = price(d, S.settings), out = [];
   for (const m of r.missing) {
     if (m.key.startsWith('factor:')) { const [, f, l] = m.key.split(':'); out.push(field(m.key, `ضریب «${levelOf(l).name}» برای ${FORMULAS[f].name}`, '×', null, 'برای همهٔ محصولات همین فرمول و سطح به کار می‌رود.', true)); }
-    else if (m.key === 'markup') out.push(field('markup', 'ضریب متریال', '×', null, 'روی فلز و سنگ؛ معمولاً ۱٫۲ تا ۱٫۵.', true));
+    else if (m.key === 'markup') out.push(field('markup', 'ضریب متریال', '×', null, 'روی فلزی که خودتان می‌دهید و سنگ.', true));
+    else if (m.key === 'hourly') out.push(field('hourly', 'ارزش هر ساعت کار تیم', 'تومان', null, 'برای همهٔ کارهای دستی تیم به کار می‌رود.'));
     else if (m.key.startsWith('price:')) { const id = m.key.slice(6); out.push(field(m.key, `قیمت روز هر گرم ${matOf(id).name}`, 'تومان', null, S.market && S.market[id] ? `${say(`بازار امروز ${plain(S.market[id].p)} تومان`)} <button class="link" data-act="market:${id}">همین</button>` : '')); }
   }
   return out.length ? `<p class="lab2">برای کامل شدن قیمت این‌ها هم لازم است</p>${out.join('')}` : '';
@@ -499,7 +503,8 @@ function drawEditor() {
     h += `<p class="lab2">فلز</p>${chips('material', MATERIALS, d.material)}`;
     if (sup === 'self') h += field('weight', `وزن ${matOf(d.material).name}`, 'گرم', d.weight, 'فلزی که خودتان به کارگاه می‌دهید.', true);
     if (sup === 'workshop') h += `<p class="help">${matOf(d.material).name} را کارگاه می‌دهد؛ هزینه‌اش داخل فاکتور است.</p>`;
-    h += field('invoice', 'فاکتور کارگاه', 'تومان', d.invoice, invoiceHint(d));
+    h += field('invoice', formulaOf(d) === 'panel' ? 'فاکتور کارگاه (اگر بیرون ساخته شده)' : 'فاکتور کارگاه', 'تومان', d.invoice, invoiceHint(d));
+    h += field('hours', 'ساعت کار دستی تیم', 'ساعت', d.hours, S.settings.teamHourly ? say(`برای کاری که خود تیم با دست ساخته؛ هر ساعت ${plain(S.settings.teamHourly)} تومان.`) : 'برای کار دستی خود تیم.', true);
     h += `<div class="inline-fix">${inlineFix(d)}</div>`;
     h += field('stone', 'سنگ', 'تومان', d.stone, 'اگر سنگ ندارد، خالی بگذارید.');
     if (formulaOf(d) === 'panel') h += `<div class="two">${field('w', 'عرض', 'سانتی‌متر', d.w, '', true)}${field('h', 'ارتفاع', 'سانتی‌متر', d.h, '', true)}</div>`;
@@ -524,7 +529,7 @@ function summary(d, r) {
   const rows = [
     [0, 'محصول', [cat && cat.name, d.sub].filter(Boolean).join('، ') || '—'],
     [1, 'سطح کار', lv ? lv.name : '—'],
-    [2, 'هزینه‌ها', [mt && mt.name, self && d.weight != null ? `${d.weight} گرم` : '', d.invoice != null ? `کارگاه ${plain(d.invoice)}` : 'فاکتور وارد نشده'].filter(Boolean).join('، ')],
+    [2, 'هزینه‌ها', [mt && mt.name, self && d.weight != null ? `${d.weight} گرم` : '', d.invoice != null ? `کارگاه ${plain(d.invoice)}` : '', d.hours ? `${d.hours} ساعت کار تیم` : '', d.invoice == null && !d.hours ? 'کارگاه یا ساعت وارد نشده' : ''].filter(Boolean).join('، ')],
     [3, 'نام و عکس', `${d.title || 'بدون نام'}، ${d.photos.length} عکس`],
   ];
   let h = `<div class="sum-head">${ph ? `<img src="${ph}" alt="">` : ''}<div><h2>${esc(d.title || d.sub || 'محصول تازه')}</h2>
@@ -533,7 +538,7 @@ function summary(d, r) {
   if (r.complete) {
     h += `<details class="explain"><summary>چطور حساب شد؟</summary><div class="calc">
       ${r.material ? `<div class="cl"><span>متریال<small>${say(`(فلز ${plain(r.material - (d.stone || 0))} + سنگ ${plain(d.stone || 0)}) × ${r.markup}`)}</small></span><b>${short(r.materialPart)}</b></div>` : ''}
-      <div class="cl"><span>کار و طراحی<small>${say(`فاکتور ${plain(r.invoice)} × ضریب ${lv.name} ${r.factor}`)}</small></span><b>${short(r.workPart)}</b></div>
+      <div class="cl"><span>کار و طراحی<small>${say(`(${[r.invoice != null ? `فاکتور ${plain(r.invoice)}` : '', r.labour ? `کار تیم ${plain(r.labour)}` : ''].filter(Boolean).join(' + ')}) × ضریب ${lv.name} ${r.factor}`)}</small></span><b>${short(r.workPart)}</b></div>
       ${r.step ? `<div class="cl"><span>گرد به بالا<small>${say(`تا مضرب ${plain(r.step)}`)}</small></span><b>${short(r.final)}</b></div>` : ''}</div></details>`;
   }
   h += `<div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}</div>`;
@@ -753,7 +758,7 @@ function bind() {
     const key = el.dataset.num, v = parseNum(el.value);
     if (!el.dataset.dec && v != null) el.value = fmt(v);
     else if (el.dataset.dec) el.value = faDigits(el.value).replace('.', '٫');
-    if (key.startsWith('price:') || key.startsWith('factor:') || key === 'markup') return pendingSetting(key, v);
+    if (key.startsWith('price:') || key.startsWith('factor:') || ['markup', 'cast', 'hourly'].includes(key)) return pendingSetting(key, v);
     if (!S.ed) return;
     S.ed.d[key] = v;
     const r = price(S.ed.d, S.settings), box = $('.ed-price');
@@ -787,6 +792,8 @@ function bind() {
 function settingChange(a, b) {
   const out = [];
   if (a.markup !== b.markup) out.push(`ضریب متریال ${b.markup ?? 'خالی'}`);
+  if (a.castPerGram !== b.castPerGram) out.push(`ریخته‌گری هر گرم ${b.castPerGram ? plain(b.castPerGram) : 'خالی'}`);
+  if (a.teamHourly !== b.teamHourly) out.push(`ساعت کار تیم ${b.teamHourly ? plain(b.teamHourly) : 'خالی'}`);
   for (const m of ['silver', 'gold']) if (a.prices[m] !== b.prices[m]) out.push(`قیمت ${m === 'silver' ? 'نقره' : 'طلا'} ${b.prices[m] ? plain(b.prices[m]) : 'خالی'}`);
   for (const f of Object.keys(FORMULAS)) for (const l of LEVELS) if (a.factors[f][l.id] !== b.factors[f][l.id]) out.push(`ضریب ${l.name} ${FORMULAS[f].name} ${b.factors[f][l.id] ?? 'خالی'}`);
   return `تنظیمات را عوض کرد: ${out.join('، ') || 'بدون تغییر'}`;
@@ -795,6 +802,8 @@ function pendingSetting(key, v) {
   if (!pendingSetting.before) pendingSetting.before = JSON.parse(JSON.stringify(S.settings));
   const [kind, a, b] = key.split(':');
   if (kind === 'markup') S.settings.markup = v;
+  else if (kind === 'cast') S.settings.castPerGram = v;
+  else if (kind === 'hourly') S.settings.teamHourly = v;
   else if (kind === 'price') { S.settings.prices[a] = v; S.settings.pricesAt[a] = v == null ? null : Date.now(); }
   else S.settings.factors[a][b] = v;
   if (S.ed) { const r = price(S.ed.d, S.settings), box = $('.ed-price'); if (box) { box.classList.toggle('ok', r.complete); box.querySelector('b').innerHTML = priceTag(r); } }

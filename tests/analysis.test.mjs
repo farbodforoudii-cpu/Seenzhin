@@ -17,8 +17,19 @@ assert.equal(A.cost, 2000000 + 4000000);
 assert.equal(A.sold30, 1); assert.equal(A.revenue30, 3500000); assert.equal(A.daysToSell, 10);
 assert.equal(A.metals[0].grams, 20); assert.equal(A.metals[0].impact10, 20 * 100000 * 0.1 * 1.5);
 assert.equal(A.ladder.find(l => l.id === 'jewelry').broken, true);          // simple == designed
-assert.deepEqual(suggestInvoice(P, { sub: 'انگشتر', level: 'designed' }), { value: 1000000, n: 3 });
-assert.equal(suggestInvoice(P, { sub: 'انگشتر', level: 'special' }), null);
+assert.deepEqual(suggestInvoice(P, { cat: 'jewelry', sub: 'انگشتر', level: 'designed' }), { value: 1000000, n: 3, basis: 'هم‌نوع و هم‌سطح' });
+assert.equal(suggestInvoice(P, { cat: 'jewelry', sub: 'انگشتر', level: 'special' }).basis, 'هم‌نوع'); // falls back to the same type
+assert.equal(suggestInvoice(P, { sub: 'انگشتر' }), null);                     // no category, no guess
 assert.equal(marketGap(st, { silver: { p: 105000 } })[0].pct.toFixed(2), '0.05');
 assert.equal(marketGap(st, { silver: { p: 101000 } }).length, 0);           // under 2%: no nagging
 console.log('analysis ok');
+
+// casting estimate: weight × fee + median of the workshop's other jobs from real invoices (illustrative numbers)
+{
+  const s3 = defaultSettings(); s3.castPerGram = 50000;
+  const P2 = [{ id: 'a', cat: 'jewelry', sub: 'گوشواره', material: 'silver', weight: 13, invoice: 3000000 }, { id: 'b', cat: 'jewelry', sub: 'سنجاق', material: 'silver', weight: 20, invoice: 3000000 }];
+  const sg = suggestInvoice(P2, { cat: 'jewelry', sub: 'گوشواره', material: 'silver', weight: 14 }, s3);
+  assert.equal(sg.basis, 'ریخته‌گری'); assert.equal(sg.casting, 700000); assert.equal(sg.extra, 2175000); assert.equal(sg.value, 2880000);
+  assert.notEqual(suggestInvoice(P2, { cat: 'panel', sub: 'بزرگ', material: 'silver', weight: 100 }, s3)?.basis, 'ریخته‌گری'); // panels are hand-built
+  console.log('casting estimate ok');
+}

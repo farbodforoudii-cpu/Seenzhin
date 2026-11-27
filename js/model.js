@@ -49,6 +49,8 @@ export function defaultSettings() {
     suppliers: { silver: 'self', gold: 'self', bronze: 'workshop' },
     factors,
     markup: null, // material factor on metal + stones
+    castPerGram: null, // workshop casting fee per gram (entered in settings)
+    teamHourly: null, // value of one hour of the team's own handwork (entered in settings)
     rounding: 0,
   };
 }
@@ -93,9 +95,16 @@ export function price(p, settings) {
   // 2) stones, 3) workshop invoice
   const stone = num(p.stone) || 0;
   if (stone) lines.push({ label: 'سنگ', how: null, value: stone });
-  const inv = num(p.invoice);
-  if (inv == null) missing.push({ key: 'invoice', text: 'مبلغ فاکتور کارگاه را وارد کنید' });
-  else lines.push({ label: 'فاکتور کارگاه', how: null, value: inv });
+  // 3) The work: an outside workshop invoice, the team's own hand-work hours at the team rate, or both.
+  const inv = num(p.invoice), hours = num(p.hours), rate = num(settings.teamHourly);
+  if (inv == null && !hours) missing.push({ key: 'invoice', text: 'فاکتور کارگاه یا ساعت کار تیم را وارد کنید' });
+  if (inv != null) lines.push({ label: 'فاکتور کارگاه', how: null, value: inv });
+  let labour = 0;
+  if (hours) {
+    if (rate == null) missing.push({ key: 'hourly', text: 'ارزش هر ساعت کار تیم در تنظیمات وارد نشده است' });
+    else { labour = hours * rate; lines.push({ label: 'کار تیم', how: { kind: 'mul', a: hours, aUnit: 'ساعت', b: rate, bUnit: 'تومان' }, value: labour }); }
+  }
+  const work = (inv || 0) + labour;
 
   // 4) Expensive materials (metal we supply + stones) take a small material factor; the workshop work takes the
   // level factor that carries Servin's design value. Pattern used by independent jewellers (Metalsmith Society):
@@ -108,14 +117,14 @@ export function price(p, settings) {
     missing.push({ key: `factor:${formula}:${p.level}`, text: `ضریب «${levelOf(p.level).name}» برای فرمول ${FORMULAS[formula].name} در تنظیمات وارد نشده است` });
   }
 
-  const costKnown = !missing.some(m => ['weight', 'invoice', 'material'].includes(m.key) || m.key.startsWith('price:'));
-  const cost = costKnown ? material + (inv || 0) : null;
+  const costKnown = !missing.some(m => ['weight', 'invoice', 'material', 'hourly'].includes(m.key) || m.key.startsWith('price:'));
+  const cost = costKnown ? material + work : null;
   const materialPart = costKnown && (material === 0 || markup != null) ? material * (material ? markup : 0) : null;
-  const workPart = costKnown && factor != null ? (inv || 0) * factor : null;
+  const workPart = costKnown && factor != null ? work * factor : null;
   const internal = materialPart != null && workPart != null ? materialPart + workPart : null;
   const step = settings.rounding || 0;
   const final = internal == null ? null : step ? Math.ceil(internal / step) * step : Math.round(internal);
-  return { formula, lines, cost, material, invoice: inv, markup, factor, materialPart, workPart, internal, step, final, missing, complete: final != null };
+  return { formula, lines, cost, material, invoice: inv, labour, work, markup, factor, materialPart, workPart, internal, step, final, missing, complete: final != null };
 }
 
 // Products whose saved price no longer matches today's formula (metal price or factor changed).
