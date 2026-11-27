@@ -199,40 +199,45 @@ const itemOf = p => ({
 function openInvoice(inv, productId) {
   const base = inv ? JSON.parse(JSON.stringify(inv)) : { id: uid(), no: nextNumber(S.invoices), date: Date.now(), customer: { name: '', phone: '' }, items: [], shipping: null, discount: null, paid: null, note: '' };
   if (productId) { const p = S.products.find(x => x.id === productId); if (p) base.items.push(itemOf(p)); }
+  if (!base.pay) { const st = totals(base).status; base.pay = st === 'paid' ? 'full' : st === 'deposit' ? 'deposit' : inv ? 'none' : null; }
   S.inv = { d: base, edit: !!inv };
   openSheet('');
   drawInvoice();
 }
+// Paid amount follows the simple choice: «کامل گرفتم» = the whole total, «بیعانه» = what was typed, «هنوز نه» = nothing.
+const paidOf = d => (d.pay === 'full' ? totals({ ...d, paid: 0 }).total : d.pay === 'deposit' ? d.paid || 0 : 0);
 function invSum(d) {
-  const t = totals(d);
-  return `<span class="c-main"><small>مبلغ کل</small><b>${iso(fmt(t.total))} تومان</b></span>${t.paid && t.remaining ? `<span class="sec">${say(`مانده ${plain(t.remaining)}`)}</span>` : ''}`;
+  const t = totals({ ...d, paid: paidOf(d) });
+  return `<span class="c-main"><small>مبلغ کل</small><b>${iso(fmt(t.total))} تومان</b></span>${d.pay === 'deposit' && t.remaining ? `<span class="sec">${say(`مانده ${plain(t.remaining)}`)}</span>` : ''}`;
 }
+// One screen, three plain questions: what was sold, to whom, was it paid. Extras are folded away.
 function drawInvoice() {
   const d = S.inv.d, panel = $('#sheet .panel');
-  const inside = new Set(d.items.map(i => i.productId).filter(Boolean));
-  const pick = S.products.filter(p => p.status !== 'sold' && !inside.has(p.id) && shownPrice(p, S.settings) != null);
+  const chosen = new Set(d.items.map(i => i.productId).filter(Boolean));
+  const sellable = S.products.filter(p => (p.status !== 'sold' || chosen.has(p.id)) && shownPrice(p, S.settings) != null);
   const names = [...new Set(S.invoices.map(i => i.customer && i.customer.name).filter(Boolean))];
-  const nf = (key, label, unit, val) => `<label class="field"><span class="lab">${label}</span><span class="inp"><input data-inum="${key}" inputmode="decimal" placeholder="—" value="${val == null ? '' : fmt(val)}"><em>${unit}</em></span></label>`;
+  const nf = (key, label, val, ph = '—') => `<label class="field"><span class="lab">${label}</span><span class="inp"><input data-inum="${key}" inputmode="numeric" placeholder="${ph}" value="${val == null ? '' : fmt(val)}"><em>تومان</em></span></label>`;
   let h = `<div class="ed-top"><button class="x" data-close aria-label="بستن">×</button><span class="sec">${noFa(d.no)}</span></div>
     <h2 class="q">فاکتور فروش</h2>
-    <p class="stitle">خریدار</p><div class="group">
-      <label class="cell"><span>نام</span><input class="bare txt" data-itext="customer.name" list="custs" placeholder="نام مشتری" value="${esc(d.customer.name)}"></label>
-      <label class="cell"><span>تلفن</span><input class="bare txt" data-itext="customer.phone" inputmode="tel" placeholder="اختیاری" value="${esc(d.customer.phone)}"></label></div>
-    <datalist id="custs">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
-    <p class="stitle">اقلام</p>`;
-  if (d.items.length) {
-    h += `<div class="group">${d.items.map((it, i) => `<div class="cell item">
-      ${it.photo && urls.get(it.photo) ? `<img src="${urls.get(it.photo)}" alt="">` : '<i class="noph"></i>'}
-      <span class="c-main">${it.productId ? `<b>${esc(it.title)}</b>` : `<input class="bare txt full" data-itext="item:${i}:title" placeholder="عنوان (مثلاً سفارش انگشتر)" value="${esc(it.title)}">`}<small>${esc(it.detail || 'قلم دستی')}</small></span>
-      <input class="bare amt-in" data-inum="item:${i}:price" inputmode="decimal" placeholder="قیمت" value="${it.price == null ? '' : fmt(it.price)}">
-      <button class="rmx" data-irm="${i}" aria-label="حذف قلم">×</button></div>`).join('')}</div>`;
+    <p class="qn"><span class="n">۱</span>چه چیزی فروختید؟</p>`;
+  if (sellable.length) {
+    h += `<div class="sel">${sellable.map(p => { const on = chosen.has(p.id), ph = p.photos && p.photos[0] && urls.get(p.photos[0]);
+      return `<button class="sel-i ${on ? 'on' : ''}" data-itog="${p.id}">${ph ? `<img src="${ph}" alt="">` : `<i class="noph">${esc(p.sub || '')}</i>`}<span class="tick">✓</span>
+        <b>${esc(p.title || p.sub || 'محصول')}</b><small>${short(shownPrice(p, S.settings))}</small></button>`; }).join('')}</div>`;
+  } else {
+    h += `<div class="group"><div class="cell col"><b>هنوز محصول قیمت‌داری در ویترین نیست.</b><span class="sec">اول محصول را در ویترین ثبت کنید؛ بعد اینجا با یک لمس انتخابش می‌کنید.</span></div></div>`;
   }
-  if (pick.length) h += `<div class="picker">${pick.map(p => `<button class="pk" data-iadd="${p.id}">${p.photos && p.photos[0] && urls.get(p.photos[0]) ? `<img src="${urls.get(p.photos[0])}" alt="">` : '<i class="noph"></i>'}<span>${esc(p.title || p.sub || '')}</span><small>${short(shownPrice(p, S.settings))}</small></button>`).join('')}</div>`;
-  h += `<button class="addline" data-icustom>${svg('plus')}<span>قلم دستی (سفارش یا خدمت)</span></button>`;
-  h += `<p class="stitle">هزینه‌ها و پرداخت</p>${nf('shipping', 'ارسال', 'تومان', d.shipping)}${nf('discount', 'تخفیف', 'تومان', d.discount)}${nf('paid', 'دریافت‌شده', 'تومان', d.paid)}
-    <div class="chips quick"><button class="chip" data-ipay="full">کامل</button><button class="chip" data-ipay="half">نصف (بیعانه)</button><button class="chip" data-ipay="none">هنوز هیچ</button></div>
-    <label class="field"><span class="lab">یادداشت روی فاکتور</span><span class="inp"><input data-itext="note" placeholder="اختیاری، مثلاً زمان تحویل" value="${esc(d.note)}"></span></label>
-    <div class="ed-foot inv-foot"><div class="inv-sum">${invSum(d)}</div>${S.inv.edit ? `<button class="btn ghost danger" data-idel>حذف</button>` : ''}<button class="btn" data-isave ${d.items.length ? '' : 'disabled'}>ساخت فاکتور</button></div>`;
+  h += `<p class="qn"><span class="n">۲</span>به چه کسی؟</p>
+    <label class="field"><span class="inp"><input data-itext="customer.name" list="custs" placeholder="نام مشتری" value="${esc(d.customer.name)}"></span></label>
+    <datalist id="custs">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    <p class="qn"><span class="n">۳</span>پول را گرفتید؟</p>
+    <div class="chips wrap pay">${[['full', 'کامل گرفتم'], ['deposit', 'بیعانه گرفتم'], ['none', 'هنوز نه']].map(([k, l]) => `<button class="chip ${d.pay === k ? 'on' : ''}" data-ipay="${k}">${l}</button>`).join('')}</div>
+    ${d.pay === 'deposit' ? nf('paid', 'چقدر بیعانه گرفتید؟', d.paid) : ''}
+    <details class="explain more" ${d.shipping || d.discount || d.note || d.customer.phone ? 'open' : ''}><summary>ارسال، تخفیف، تلفن یا یادداشت</summary>
+      ${nf('shipping', 'هزینهٔ ارسال', d.shipping, 'ندارد')}${nf('discount', 'تخفیف', d.discount, 'ندارد')}
+      <label class="field"><span class="lab">تلفن مشتری</span><span class="inp"><input data-itext="customer.phone" inputmode="tel" placeholder="اختیاری" value="${esc(d.customer.phone)}"></span></label>
+      <label class="field"><span class="lab">یادداشت روی فاکتور</span><span class="inp"><input data-itext="note" placeholder="مثلاً زمان تحویل" value="${esc(d.note)}"></span></label></details>
+    <div class="ed-foot inv-foot"><div class="inv-sum">${invSum(d)}</div>${S.inv.edit ? `<button class="btn ghost danger" data-idel>حذف</button>` : ''}<button class="btn" data-isave>ساخت فاکتور</button></div>`;
   panel.innerHTML = h;
 }
 const loadImg = src => new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
@@ -254,13 +259,13 @@ async function showInvoice(id) {
     <div class="ed-foot"><button class="btn ghost" data-iedit="${inv.id}">ویرایش</button><button class="btn ghost" data-iprint>چاپ یا PDF</button><button class="btn" data-ishare>ارسال تصویر</button></div>`;
 }
 async function saveInvoice() {
-  const d = S.inv.d, t = totals(d), now = Date.now();
-  // Say exactly what is missing instead of dropping rows silently.
-  const noPrice = d.items.findIndex(it => it.price == null);
-  if (noPrice >= 0) return island(`قیمت قلم ${noPrice + 1} را وارد کنید`);
-  const noTitle = d.items.findIndex(it => !it.productId && !it.title);
-  if (noTitle >= 0) return island(`عنوان قلم ${noTitle + 1} را وارد کنید`);
-  if (!d.items.length) return island('یک محصول از ویترین یا یک قلم دستی اضافه کنید');
+  const d = S.inv.d, now = Date.now();
+  // Say exactly what is missing, one thing at a time.
+  if (!d.items.length) return island('یک محصول را از بالا انتخاب کنید');
+  if (!d.pay) return island('بگویید پول را گرفتید یا نه');
+  if (d.pay === 'deposit' && !d.paid) return island('مبلغ بیعانه را وارد کنید');
+  d.paid = paidOf(d);
+  const t = totals(d);
   await db.put('invoices', d);
   const i = S.invoices.findIndex(x => x.id === d.id);
   if (i >= 0) S.invoices[i] = d; else S.invoices.unshift(d);
@@ -527,10 +532,17 @@ function bind() {
     if ('iprint' in ds && S.preview) { $('#print').innerHTML = `<img src="${S.preview.cv.toDataURL('image/png')}" alt="">`; setTimeout(() => window.print(), 100); return; }
     if (S.inv) {
       const d = S.inv.d;
-      if (ds.iadd) { const p = S.products.find(x => x.id === ds.iadd); if (p) d.items.push(itemOf(p)); return drawInvoice(); }
-      if ('icustom' in ds) { d.items.push({ productId: null, photo: null, title: '', detail: '', price: null }); return drawInvoice(); }
-      if (ds.irm != null) { d.items.splice(Number(ds.irm), 1); return drawInvoice(); }
-      if (ds.ipay) { const t = totals(d); d.paid = ds.ipay === 'full' ? t.total : ds.ipay === 'half' ? Math.round(t.total / 2) : null; return drawInvoice(); }
+      if (ds.itog) {
+        const i = d.items.findIndex(x => x.productId === ds.itog);
+        if (i >= 0) d.items.splice(i, 1); else { const p = S.products.find(x => x.id === ds.itog); if (p) d.items.push(itemOf(p)); }
+        return drawInvoice();
+      }
+      if (ds.ipay) {
+        d.pay = ds.ipay;
+        // A deposit starts at half the total; Servin can change it.
+        if (d.pay === 'deposit' && !d.paid) d.paid = Math.round(totals({ ...d, paid: 0 }).total / 2 / 1e5) * 1e5 || null;
+        return drawInvoice();
+      }
       if ('isave' in ds) return saveInvoice();
       if ('idel' in ds) {
         if (!confirm('این فاکتور حذف شود؟ وضعیت محصولات تغییر نمی‌کند.')) return;
@@ -585,7 +597,6 @@ function bind() {
       else if (key.includes('.')) { const [a, b] = key.split('.'); d[a][b] = v; }
       else d[key] = v;
       const sum = $('.inv-sum'); if (sum) sum.innerHTML = invSum(d);
-      const sv = $('[data-isave]'); if (sv) sv.disabled = !d.items.length;
       return;
     }
     if (el.dataset.text && S.ed) { S.ed.d[el.dataset.text] = el.value; return; }
