@@ -299,3 +299,20 @@ input.full { width: 100%; padding: 0; font-weight: 600; }
 .actions-row { display: flex; margin-top: 12px; }
 .danger-row { color: var(--r); }
 .err { color: var(--r) !important; }
+
+/* refresh, back and undo */
+.ph-act { display: flex; align-items: center; gap: 8px; }
+.icon-btn { width: 40px; height: 40px; border-radius: 50%; background: var(--card); display: grid; place-items: center; color: var(--ink); box-shadow: var(--shadow); }
+.icon-btn svg { width: 20px; height: 20px; }
+.icon-btn.spin svg { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(-360deg); } }
+.x.back { display: grid; place-items: center; }
+.x.back svg { width: 20px; height: 20px; color: var(--ink); }
+.undo { position: fixed; inset-inline: 16px; bottom: calc(92px + env(safe-area-inset-bottom)); z-index: 30; display: flex; align-items: center; gap: 12px;
+  max-width: 560px; margin: 0 auto; padding: 12px 12px 12px 16px; border-radius: 18px; background: var(--ink); color: var(--bg);
+  box-shadow: 0 10px 30px rgba(0,0,0,.2); opacity: 0; visibility: hidden; transform: translateY(24px); transition: transform .45s var(--ease), opacity .3s, visibility .3s; pointer-events: none; }
+.undo.show { opacity: 1; visibility: visible; transform: none; pointer-events: auto; }
+.undo span { flex: 1; font-size: 14px; font-weight: 600; }
+.undo button { flex: none; background: var(--acc); color: #fff; font-weight: 700; font-size: 14px; padding: 8px 14px; border-radius: 12px; }
+
+.hero-n.empty b { font-size: 22px; font-weight: 700; letter-spacing: 0; }

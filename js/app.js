@@ -25,9 +25,53 @@ const ICON = {
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   chev: '<path d="M15 6l-6 6 6 6"/>',
+  back: '<path d="M9 6l6 6-6 6"/>',
+  refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
   sales: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
 };
 const svg = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
+
+// ---------- undo: every change that matters can be taken back for a few seconds ----------
+// snap() copies the records an action is about to change; the returned function puts them back exactly.
+async function snap({ products = [], invoices = [], photos = [], settings = false }) {
+  const keep = { p: [], i: [], ph: [], st: settings ? JSON.parse(JSON.stringify(S.settings)) : null };
+  for (const id of products) keep.p.push([id, await db.getOne('products', id)]);
+  for (const id of invoices) keep.i.push([id, await db.getOne('invoices', id)]);
+  for (const id of photos) keep.ph.push([id, await db.getOne('photos', id)]);
+  return async () => {
+    for (const [id, ph] of keep.ph) if (ph) await db.put('photos', ph);
+    for (const [id, v] of keep.p) v ? await db.put('products', { ...v, updatedAt: Date.now() }) : await db.del('products', id);
+    for (const [id, v] of keep.i) v ? await db.put('invoices', v) : await db.del('invoices', id);
+    if (keep.st) { S.settings = keep.st; await saveSettings(); }
+    await load(); render();
+  };
+}
+function offerUndo(text, restore) {
+  const el = $('#undo');
+  el.innerHTML = `<span>${say(text)}</span><button data-undo>برگرداندن</button>`;
+  el.classList.add('show');
+  S.undo = restore;
+  clearTimeout(offerUndo.t); offerUndo.t = setTimeout(() => { el.classList.remove('show'); S.undo = null; }, 7000);
+}
+
+// ---------- back: the arrow, a swipe from left to right (like iPhone), or Escape ----------
+function goBack() {
+  if ($('#sheet').classList.contains('open')) {
+    if (S.ed && S.ed.step > 0 && S.ed.step < 4) { S.ed.step--; drawEditor(); $('#sheet .panel').scrollTop = 0; return; }
+    S.inv = null; S.preview = null;
+    return S.ed ? closeEditor() : closeSheet();
+  }
+  const prev = (S.tabs || []).pop();
+  if (prev) { S.tab = prev; render(); scrollTo(0, 0); }
+}
+function goTab(t) { if (t !== S.tab) (S.tabs ||= []).push(S.tab); S.tab = t; render(); scrollTo(0, 0); }
+
+// ---------- refresh: other phone's changes, today's market price, and the screens ----------
+async function refresh(btn) {
+  if (btn) btn.classList.add('spin');
+  try { if (sync.state.key) await sync.run(); await loadMarket(); await load(); render(); island(sync.state.status === 'error' ? sync.state.error : 'به‌روز شد'); }
+  finally { const b = $('[data-refresh]'); if (b) b.classList.remove('spin'); }
+}
 
 // ---------- boot ----------
 // Everything the screens show, read again from this device (also after the shared account brought changes).
@@ -81,7 +125,7 @@ function render() {
   v.querySelectorAll('[data-count]').forEach(countUp);
 }
 
-const head = (title, sub, extra = '') => `<header class="phead"><div><span class="psub">${sub}</span><h1>${title}</h1></div>${extra}</header>`;
+const head = (title, sub, extra = '') => `<header class="phead"><div><span class="psub">${sub}</span><h1>${title}</h1></div><div class="ph-act">${extra}<button class="icon-btn" data-refresh aria-label="به‌روزرسانی">${svg('refresh')}</button></div></header>`;
 
 // Rolling hero number: counts up from 0 (straight to the value with reduced motion).
 function countUp(el) {
@@ -130,7 +174,7 @@ function viewHome() {
   const sp = shortParts(value);
   let h = `<div class="brand-top"><img class="brand-logo" src="brand/logo-sun.png" alt="سینژین"></div>` + head('ویترین', 'سینژین', `<button class="add-pill" data-new>${svg('plus')}<span>محصول</span></button>`);
   h += `<section class="hero enter"><span class="hero-k">ارزش ویترین</span>
-    <div class="hero-n"><b data-count="${value}">${sp.num}</b><small>${sp.unit}</small></div>
+    ${value ? `<div class="hero-n"><b data-count="${value}">${sp.num}</b><small>${sp.unit}</small></div>` : `<div class="hero-n empty"><b>${stock.length ? 'هنوز قیمتی ثبت نشده' : 'خالی'}</b></div>`}
     <span class="hero-s">${say(stock.length ? `جمع قیمت فروش ${avail} محصول موجود${res ? ` و ${res} رزرو` : ''}` : 'هنوز محصولی ثبت نشده است')}</span></section>`;
   if (T.length) h += `<div class="stitle">کارهای امروز</div><div class="group enter">${T.map(line).join('')}</div>`;
   if (S.products.length) {
@@ -198,7 +242,7 @@ function viewSales() {
   const owedSum = owed.reduce((a, x) => a + x.t.remaining, 0);
   const sp = shortParts(sum);
   h += `<section class="hero enter"><span class="hero-k">فروش ۳۰ روز اخیر</span>
-    <div class="hero-n"><b data-count="${sum}">${sp.num}</b><small>${sp.unit}</small></div>
+    ${sum ? `<div class="hero-n"><b data-count="${sum}">${sp.num}</b><small>${sp.unit}</small></div>` : '<div class="hero-n empty"><b>هنوز فروشی نیست</b></div>'}
     <span class="hero-s">${say(recent.length ? `${recent.length} فاکتور${owedSum ? `؛ ${plain(owedSum)} تومان مانده از بیعانه‌ها` : ''}` : 'هنوز فاکتوری صادر نشده است')}</span></section>`;
   if (!S.invoices.length) return h + `<div class="empty enter"><p>از روی یک محصول یا همین‌جا فاکتور بسازید؛ قیمت، عکس و جمع‌ها خودکار پر می‌شوند.</p><button class="btn" data-inew>اولین فاکتور</button></div>`;
   const cell = i => { const t = totals(i); return `<button class="cell" data-iview="${i.id}"><span class="c-main"><b>${esc((i.customer && i.customer.name) || 'بی‌نام')}</b><small>${noFa(i.no)}، ${say(`${i.items.length} قلم`)}</small></span>
@@ -233,7 +277,7 @@ function drawInvoice() {
   const names = [...new Set(S.invoices.map(i => i.customer && i.customer.name).filter(Boolean))];
   const t = totals(d);
   const nf = (key, label, val, ph) => `<label class="cell"><span>${label}</span><input class="bare" data-inum="${key}" inputmode="numeric" placeholder="${ph}" value="${val == null ? '' : fmt(val)}"><em class="u">تومان</em></label>`;
-  let h = `<div class="ed-top"><button class="x" data-close aria-label="بستن">×</button><span class="sec">${noFa(d.no)}</span></div>
+  let h = `<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button><span class="sec">${noFa(d.no)}</span></div>
     <h2 class="q">فاکتور فروش</h2>
     <p class="qn"><span class="n">۱</span>محصول را انتخاب کنید</p>`;
   if (sellable.length) {
@@ -271,10 +315,10 @@ async function showInvoice(id) {
   const inv = S.invoices.find(i => i.id === id);
   if (!inv) return;
   S.inv = null;
-  openSheet(`<div class="ed-top"><button class="x" data-close aria-label="بستن">×</button><span class="sec">${noFa(inv.no)}</span></div><div class="inv-wait">در حال ساخت فاکتور…</div>`);
+  openSheet(`<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button><span class="sec">${noFa(inv.no)}</span></div><div class="inv-wait">در حال ساخت فاکتور…</div>`);
   const cv = await invoiceImage(inv);
   S.preview = { inv, cv };
-  $('#sheet .panel').innerHTML = `<div class="ed-top"><button class="x" data-close aria-label="بستن">×</button><span class="sec">${noFa(inv.no)}</span></div>
+  $('#sheet .panel').innerHTML = `<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button><span class="sec">${noFa(inv.no)}</span></div>
     <img class="inv-img" src="${cv.toDataURL('image/png')}" alt="فاکتور">
     <div class="ed-foot"><button class="btn ghost" data-iedit="${inv.id}">ویرایش</button><button class="btn ghost" data-iprint>چاپ یا PDF</button><button class="btn" data-ishare>ارسال تصویر</button></div>`;
 }
@@ -283,6 +327,7 @@ async function saveInvoice() {
   // Say exactly what is missing, one thing at a time.
   if (!d.items.length) return island('یک محصول را از بالا انتخاب کنید');
   const t = totals(d);
+  const undo = await snap({ invoices: [d.id], products: d.items.map(it => it.productId).filter(Boolean) });
   await db.put('invoices', d);
   const i = S.invoices.findIndex(x => x.id === d.id);
   if (i >= 0) S.invoices[i] = d; else S.invoices.unshift(d);
@@ -296,9 +341,9 @@ async function saveInvoice() {
     changed.push(p);
   }
   if (changed.length) await db.putMany('products', changed);
-  island(t.status === 'paid' ? 'فاکتور ساخته شد؛ محصولات فروخته‌شده ثبت شدند' : 'فاکتور ساخته شد؛ محصولات رزرو شدند');
   S.tab = 'sales'; render();
   await showInvoice(d.id);
+  offerUndo(t.status === 'paid' ? 'فاکتور ساخته شد؛ محصولات فروخته‌شده ثبت شدند' : 'فاکتور ساخته شد؛ محصولات رزرو شدند', async () => { closeSheet(); await undo(); });
 }
 
 // ---------- settings: grouped like iOS settings ----------
@@ -396,7 +441,7 @@ function drawEditor() {
   const { d, step } = S.ed;
   const r = price(d, S.settings);
   const panel = $('#sheet .panel');
-  let h = `<div class="ed-top"><button class="x" data-close aria-label="بستن">×</button>
+  let h = `<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button>
     ${step < 4 ? `<div class="ed-price ${r.complete ? 'ok' : ''}"><span>قیمت فروش</span><b>${priceTag(r)}</b></div>` : ''}</div>`;
   if (step < 4) h += `<div class="dots">${STEPS.map((_, i) => `<i class="${i === step ? 'on' : i < step ? 'done' : ''}"></i>`).join('')}</div><h2 class="q">${STEPS[step]}</h2>`;
   if (step === 0) {
@@ -457,7 +502,7 @@ function summary(d, r) {
 function openDrift() {
   const list = drifted(S.products, S.settings);
   if (!list.length) return;
-  openSheet(`<div class="ed-top"><button class="x" data-close aria-label="بستن">×</button></div><h2 class="q">قیمت‌های تازه</h2>
+  openSheet(`<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button></div><h2 class="q">قیمت‌های تازه</h2>
     <div class="group">${list.map(x => {
       const pct = x.from ? Math.round((x.to - x.from) / x.from * 100) : null;
       return `<div class="cell"><span>${esc(x.p.title || x.p.sub || 'بی‌نام')}</span><span class="dv">${x.from != null ? `<s>${short(x.from)}</s>` : ''}<b>${short(x.to)}</b>${pct != null ? `<small class="${pct >= 0 ? 'up' : 'down'}">${iso(faDigits((pct > 0 ? '+' : '') + pct) + '٪')}</small>` : ''}</span></div>`;
@@ -481,6 +526,7 @@ async function save() {
   const d = S.ed.d, r = price(d, S.settings), now = Date.now();
   const prev = S.ed.edit ? S.products.find(x => x.id === d.id) : null;
   const { _added, ...clean } = d;
+  const undo = await snap({ products: d.id ? [d.id] : [], photos: prev ? (prev.photos || []).filter(id => !d.photos.includes(id)) : [] });
   const p = Object.assign(clean, { id: d.id || uid(), createdAt: d.createdAt || now, updatedAt: now, approved: r.complete ? { price: r.final, at: now } : null });
   if (prev && prev.status === 'sold' && p.status === 'sold' && prev.approved) p.approved = prev.approved; // sold price stays
   if (p.status === 'sold' && !(prev && prev.status === 'sold')) p.soldAt = now;
@@ -491,7 +537,9 @@ async function save() {
   if (i >= 0) S.products[i] = p; else S.products.unshift(p);
   S.ed.d._added = [];
   await closeEditor();
-  island(r.complete ? `ذخیره شد، ${plain(r.final)} تومان` : 'ذخیره شد؛ قیمت هنوز کامل نیست');
+  // A new product's undo removes it again.
+  const undoNew = async () => { await db.del('products', p.id); await load(); render(); };
+  offerUndo(r.complete ? `ذخیره شد، ${plain(r.final)} تومان` : 'ذخیره شد؛ قیمت هنوز کامل نیست', prev ? undo : undoNew);
 }
 
 // ---------- backup ----------
@@ -519,16 +567,17 @@ async function importAll(file) {
 // ---------- events ----------
 async function doAct(a) {
   if (a === 'new') return openEditor(null);
-  if (a === 'settings') { S.tab = 'settings'; render(); return scrollTo(0, 0); }
+  if (a === 'settings') return goTab('settings');
   if (a === 'drift') return openDrift();
   if (a.startsWith('edit:')) return openEditor(S.products.find(p => p.id === a.slice(5)));
   if (a.startsWith('market:')) {
     const m = a.slice(7);
     if (!S.market || !S.market[m]) return;
+    const undo = await snap({ settings: true });
     S.settings.prices[m] = S.market[m].p; S.settings.pricesAt[m] = Date.now();
     await saveSettings(); render();
     const n = drifted(S.products, S.settings).length;
-    island(n ? `قیمت به‌روز شد؛ ${n} محصول قیمت تازه دارد` : 'قیمت به‌روز شد');
+    offerUndo(n ? `قیمت به‌روز شد؛ ${n} محصول قیمت تازه دارد` : 'قیمت به‌روز شد', undo);
   }
 }
 
@@ -537,7 +586,10 @@ function bind() {
     const t = e.target.closest('button, [data-close]');
     if (!t || t.disabled) return;
     const ds = t.dataset;
-    if (ds.tab) { S.tab = ds.tab; render(); return scrollTo(0, 0); }
+    if (ds.tab) return goTab(ds.tab);
+    if ('back' in ds) return goBack();
+    if ('refresh' in ds) return refresh(t);
+    if ('undo' in ds) { const f = S.undo; S.undo = null; $('#undo').classList.remove('show'); if (f) { await f(); island('برگردانده شد'); } return; }
     if ('close' in ds) { S.inv = null; S.preview = null; return S.ed ? closeEditor() : closeSheet(); }
     if ('new' in ds) return openEditor(null);
     if (ds.act) return doAct(ds.act);
@@ -545,12 +597,13 @@ function bind() {
     if (ds.edit) return openEditor(S.products.find(p => p.id === ds.edit));
     if ('approve' in ds) {
       const list = drifted(S.products, S.settings), now = Date.now();
+      const undo = await snap({ products: list.map(x => x.p.id) });
       for (const x of list) x.p.approved = { price: x.to, at: now };
       await db.putMany('products', list.map(x => x.p));
-      closeSheet(); render(); return island(`${list.length} قیمت تأیید شد`);
+      closeSheet(); render(); return offerUndo(`${list.length} قیمت تأیید شد`, undo);
     }
-    if (ds.sup) { S.settings.suppliers[ds.sup] = ds.val; await saveSettings(); return render(); }
-    if (ds.round != null) { S.settings.rounding = Number(ds.round); await saveSettings(); render(); return island('ذخیره شد'); }
+    if (ds.sup) { const undo = await snap({ settings: true }); S.settings.suppliers[ds.sup] = ds.val; await saveSettings(); render(); return offerUndo('ذخیره شد', undo); }
+    if (ds.round != null) { const undo = await snap({ settings: true }); S.settings.rounding = Number(ds.round); await saveSettings(); render(); return offerUndo('ذخیره شد', undo); }
     if ('export' in ds) return exportAll();
     if ('signin' in ds) {
       const u = $('#su').value, p = $('#sp').value;
@@ -584,9 +637,9 @@ function bind() {
       if ('ifull' in ds) { d.paid = totals({ ...d, paid: 0 }).total; return drawInvoice(); }
       if ('isave' in ds) return saveInvoice();
       if ('idel' in ds) {
-        if (!confirm('این فاکتور حذف شود؟ وضعیت محصولات تغییر نمی‌کند.')) return;
+        const undo = await snap({ invoices: [d.id] });
         await db.del('invoices', d.id); S.invoices = S.invoices.filter(i => i.id !== d.id);
-        S.inv = null; closeSheet(); render(); return island('فاکتور حذف شد');
+        S.inv = null; closeSheet(); render(); return offerUndo('فاکتور حذف شد', undo);
       }
     }
     if (!S.ed) return;
@@ -609,11 +662,11 @@ function bind() {
     }
     if ('save' in ds) return save();
     if ('del' in ds) {
-      if (!confirm('این محصول حذف شود؟')) return;
+      const undo = await snap({ products: [d.id], photos: d.photos });
       for (const ph of d.photos) { await db.del('photos', ph); urls.delete(ph); }
       await db.del('products', d.id);
       S.products = S.products.filter(x => x.id !== d.id);
-      S.ed.d._added = []; await closeEditor(); return island('حذف شد');
+      S.ed.d._added = []; await closeEditor(); return offerUndo('محصول حذف شد', undo);
     }
     if ('dup' in ds) {
       const src = d;
@@ -662,11 +715,19 @@ function bind() {
     if ('logo' in el.dataset && el.files[0]) { await db.set('logo', el.files[0]); S.logo = URL.createObjectURL(el.files[0]); render(); return island('لوگو ذخیره شد'); }
         if ('import' in el.dataset && el.files[0]) importAll(el.files[0]);
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#sheet').classList.contains('open')) (S.ed ? closeEditor() : closeSheet()); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') goBack(); });
+  // Swipe from left to right goes back one step (like iPhone): mostly horizontal, at least 70px.
+  let sx = 0, sy = 0, st = 0;
+  document.addEventListener('touchstart', e => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now(); }, { passive: true });
+  document.addEventListener('touchend', e => {
+    const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (dx > 70 && Math.abs(dy) < 50 && Date.now() - st < 600 && !e.target.closest('.picker, .chips.scroll, input, textarea')) goBack();
+  }, { passive: true });
 }
 
 // Settings numbers are saved shortly after typing stops.
 function pendingSetting(key, v) {
+  if (!pendingSetting.before) pendingSetting.before = JSON.parse(JSON.stringify(S.settings));
   const [kind, a, b] = key.split(':');
   if (kind === 'markup') S.settings.markup = v;
   else if (kind === 'price') { S.settings.prices[a] = v; S.settings.pricesAt[a] = v == null ? null : Date.now(); }
@@ -674,8 +735,9 @@ function pendingSetting(key, v) {
   clearTimeout(pendingSetting.t);
   pendingSetting.t = setTimeout(async () => {
     await saveSettings();
+    const before = pendingSetting.before; pendingSetting.before = null;
     const n = drifted(S.products, S.settings).length;
-    island(n ? `ذخیره شد؛ ${n} محصول قیمت تازه می‌گیرد` : 'ذخیره شد');
+    offerUndo(n ? `ذخیره شد؛ ${n} محصول قیمت تازه می‌گیرد` : 'ذخیره شد', async () => { S.settings = before; await saveSettings(); await load(); render(); });
   }, 700);
 }
 
