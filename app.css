@@ -270,3 +270,7 @@ input.full { width: 100%; padding: 0; font-weight: 600; }
 .brand-logo { height: 68px; width: auto; display: block; }
 .brand-top + .phead { padding-top: 10px; }
 .phead { align-items: center; }
+
+/* The sheet is a flex column: without this, boxes with overflow (groups, the product picker) shrink to zero
+   height once the content is taller than the screen, which hid the buyer and item rows. */
+.panel > * { flex-shrink: 0; }

@@ -255,8 +255,12 @@ async function showInvoice(id) {
 }
 async function saveInvoice() {
   const d = S.inv.d, t = totals(d), now = Date.now();
-  d.items = d.items.filter(it => it.price != null && (it.productId || it.title));
-  if (!d.items.length) return island('دست‌کم یک قلم با قیمت لازم است');
+  // Say exactly what is missing instead of dropping rows silently.
+  const noPrice = d.items.findIndex(it => it.price == null);
+  if (noPrice >= 0) return island(`قیمت قلم ${noPrice + 1} را وارد کنید`);
+  const noTitle = d.items.findIndex(it => !it.productId && !it.title);
+  if (noTitle >= 0) return island(`عنوان قلم ${noTitle + 1} را وارد کنید`);
+  if (!d.items.length) return island('یک محصول از ویترین یا یک قلم دستی اضافه کنید');
   await db.put('invoices', d);
   const i = S.invoices.findIndex(x => x.id === d.id);
   if (i >= 0) S.invoices[i] = d; else S.invoices.unshift(d);
