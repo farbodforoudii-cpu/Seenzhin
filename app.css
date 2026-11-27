@@ -296,3 +296,6 @@ input.full { width: 100%; padding: 0; font-weight: 600; }
 .calcbox .cell:last-child { background: var(--fill); }
 .inv-sum .st { margin-inline-start: 8px; }
 .inv-foot { background: var(--bg); margin-inline: -18px; padding: 12px 18px 0; border-top: 1px solid var(--sep); }
+.actions-row { display: flex; margin-top: 12px; }
+.danger-row { color: var(--r); }
+.err { color: var(--r) !important; }

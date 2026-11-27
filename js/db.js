@@ -27,15 +27,29 @@ function run(store, mode, fn) {
   }));
 }
 
+// Writes that sync should know about. Set by sync.js while signed in; null otherwise.
+export const changes = { onWrite: null };
+const SYNCED = { products: 'product', invoices: 'invoice', photos: 'photo' };
+const SYNCED_KV = ['settings', 'logo'];
+const note = (store, ids, deleted = false) => changes.onWrite && SYNCED[store] && changes.onWrite(SYNCED[store], ids, deleted);
+const noteKv = key => changes.onWrite && SYNCED_KV.includes(key) && changes.onWrite('kv', [key], false);
+
+// Plain writes that do not tell sync; used when applying copies that came from the server.
+export const raw = {
+  put: (store, obj) => run(store, 'readwrite', s => { s.put(obj); }),
+  del: (store, id) => run(store, 'readwrite', s => { s.delete(id); }),
+  set: (key, val) => run('kv', 'readwrite', s => { s.put(val, key); }),
+};
+
 export const db = {
   all: store => run(store, 'readonly', s => s.getAll()),
   getOne: (store, id) => run(store, 'readonly', s => s.get(id)),
-  put: (store, obj) => run(store, 'readwrite', s => { s.put(obj); }),
-  putMany: (store, list) => run(store, 'readwrite', s => { for (const o of list) s.put(o); }),
-  del: (store, id) => run(store, 'readwrite', s => { s.delete(id); }),
+  put: (store, obj) => run(store, 'readwrite', s => { s.put(obj); }).then(() => note(store, [obj.id])),
+  putMany: (store, list) => run(store, 'readwrite', s => { for (const o of list) s.put(o); }).then(() => note(store, list.map(o => o.id))),
+  del: (store, id) => run(store, 'readwrite', s => { s.delete(id); }).then(() => note(store, [id], true)),
   clear: store => run(store, 'readwrite', s => { s.clear(); }),
   get: key => run('kv', 'readonly', s => s.get(key)),
-  set: (key, val) => run('kv', 'readwrite', s => { s.put(val, key); }),
+  set: (key, val) => run('kv', 'readwrite', s => { s.put(val, key); }).then(() => noteKv(key)),
 };
 
 export async function requestPersistence() {

@@ -6,6 +6,7 @@ import {
 import { fmt, fmtDec, iso, parseNum, esc, faDigits, short, shortParts } from './format.js';
 import { insights, suggestInvoice, marketGap, shownPrice } from './analysis.js';
 import { totals, nextNumber, noFa, STATUS_NAME, renderInvoice } from './invoice.js';
+import { sync } from './sync.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
@@ -29,16 +30,30 @@ const ICON = {
 const svg = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
 
 // ---------- boot ----------
-async function boot() {
+// Everything the screens show, read again from this device (also after the shared account brought changes).
+async function load() {
   S.settings = Object.assign(defaultSettings(), (await db.get('settings')) || {});
   S.products = (await db.all('products')).sort((a, b) => b.createdAt - a.createdAt);
-  for (const ph of await db.all('photos')) urls.set(ph.id, URL.createObjectURL(ph.blob));
+  for (const u of urls.values()) URL.revokeObjectURL(u);
+  urls.clear();
+  for (const ph of await db.all('photos')) if (ph.blob) urls.set(ph.id, URL.createObjectURL(ph.blob));
   S.invoices = (await db.all('invoices')).sort((a, b) => b.date - a.date);
   const lg = await db.get('logo');
-  if (lg) S.logo = URL.createObjectURL(lg);
+  S.logo = lg ? URL.createObjectURL(lg) : null;
+}
+async function boot() {
+  await load();
   requestPersistence();
   bind();
   render();
+  // Shared account: changes from the other phone appear by themselves; an open form is never redrawn under you.
+  sync.onRemote = async () => {
+    await load();
+    if ($('#sheet').classList.contains('open')) { S.pendingRemote = true; return; }
+    render(); island('تغییرات گوشی دیگر رسید');
+  };
+  sync.onChange(() => { if (S.tab === 'settings' && !$('#sheet').classList.contains('open')) render(); });
+  await sync.init();
   loadMarket();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }
@@ -101,6 +116,8 @@ function todo() {
   if (dr.length) L.push({ tone: 'o', t: `${dr.length} قیمت تازه منتظر تأیید است`, d: 'برای دیدن قیمت قبلی و تازه بزنید', act: 'drift' });
   const inc = S.products.filter(p => p.status !== 'sold' && !price(p, S.settings).complete);
   if (inc.length) L.push({ tone: 'r', t: `${inc.length} محصول هنوز قیمت ندارد`, d: price(inc[0], S.settings).missing[0].text, act: 'edit:' + inc[0].id });
+  if (!sync.state.key) L.push({ tone: 'o', t: 'حساب مشترک را وصل کنید', d: 'تا گوشی شما و سروین همیشه یکی باشند', act: 'settings' });
+  else if (sync.state.status === 'error') L.push({ tone: 'r', t: 'همگام‌سازی انجام نشد', d: sync.state.error, act: 'settings' });
   return L.slice(0, 3);
 }
 
@@ -293,6 +310,21 @@ function viewSettings() {
   const st = S.settings;
   const metals = MATERIALS.filter(x => x.id !== 'none');
   let h = head('تنظیمات', 'عددهای پایهٔ قیمت');
+  const Y = sync.state;
+  if (!Y.key) {
+    h += `<div class="stitle">حساب مشترک</div><div class="group enter">
+      <label class="cell"><span>نام کاربری</span><input class="bare txt" id="su" autocomplete="username" autocapitalize="off" placeholder="مثلاً seenzhin"></label>
+      <label class="cell"><span>رمز</span><input class="bare txt" id="sp" type="password" autocomplete="current-password" placeholder="دست‌کم ۶ حرف"></label></div>
+      <div class="actions-row"><button class="btn" data-signin>ورود</button></div>
+      <p class="foot">شما و سروین با همین یک نام و رمز وارد شوید؛ هر چه روی یک گوشی ثبت شود، روی گوشی دیگر هم می‌آید. اول سروین وارد شود.</p>`;
+  } else {
+    const when = Y.last ? new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit' }).format(new Date(Y.last)) : '';
+    const st = Y.status === 'syncing' ? 'در حال همگام‌سازی…' : Y.status === 'error' ? Y.error : when ? `آخرین همگام‌سازی ساعت ${when}` : '';
+    h += `<div class="stitle">حساب مشترک</div><div class="group enter">
+      <div class="cell"><span class="c-main"><b>${esc(Y.user)}</b><small class="${Y.status === 'error' ? 'err' : ''}">${esc(st)}</small></span><button class="pill" data-syncnow>الان</button></div>
+      <button class="cell danger-row" data-signout><span>خروج از حساب روی این گوشی</span></button></div>
+      <p class="foot">هر تغییر چند ثانیه بعد روی گوشی دیگر هم می‌آید.</p>`;
+  }
   h += `<div class="stitle">قیمت فلز، هر گرم</div><div class="group enter">`;
   for (const m of metals) {
     if ((st.suppliers[m.id] || m.supplier) !== 'self') continue;
@@ -334,6 +366,7 @@ function openSheet(html) {
   sh.classList.add('open'); document.body.classList.add('locked');
 }
 function closeSheet() {
+  if (S.pendingRemote) { S.pendingRemote = false; setTimeout(render, 350); }
   $('#sheet').classList.remove('open'); document.body.classList.remove('locked');
   setTimeout(() => { if (!$('#sheet').classList.contains('open')) $('#sheet').innerHTML = ''; }, 320);
 }
@@ -519,6 +552,17 @@ function bind() {
     if (ds.sup) { S.settings.suppliers[ds.sup] = ds.val; await saveSettings(); return render(); }
     if (ds.round != null) { S.settings.rounding = Number(ds.round); await saveSettings(); render(); return island('ذخیره شد'); }
     if ('export' in ds) return exportAll();
+    if ('signin' in ds) {
+      const u = $('#su').value, p = $('#sp').value;
+      t.disabled = true; t.textContent = 'در حال ورود…';
+      try {
+        const ok = await sync.signIn(u, p, async user => confirm(`حسابی به نام «${user}» نیست. ساخته شود؟\n(اگر سروین قبلاً حساب ساخته، نام یا رمز را دوباره بررسی کنید.)`));
+        if (ok) { await load(); render(); island('وارد شدید؛ همه‌چیز همگام شد'); } else render();
+      } catch (e) { island(e.message); render(); }
+      return;
+    }
+    if ('syncnow' in ds) return sync.run();
+    if ('signout' in ds) { if (confirm('از حساب مشترک روی این گوشی خارج شوید؟ داده‌ها پاک نمی‌شوند.')) { await sync.signOut(); render(); } return; }
     if ('inew' in ds) return openInvoice(null);
     if (ds.sell) { const id = ds.sell; await closeEditor(); return openInvoice(null, id); }
     if (ds.iview) return showInvoice(ds.iview);
