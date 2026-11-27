@@ -134,7 +134,11 @@ export function price(p, settings) {
   const internal = materialPart != null && workPart != null ? materialPart + workPart : null;
   const step = settings.rounding || 0;
   const final = internal == null ? null : step ? Math.ceil(internal / step) * step : Math.round(internal);
-  return { formula, lines, cost, material, invoice: inv, casting, labour, work, markup, factor, materialPart, workPart, internal, step, final, missing, complete: final != null };
+  const res = { formula, lines, cost, material, invoice: inv, casting, labour, work, markup, factor, materialPart, workPart, internal, step, final, missing, complete: final != null };
+  // A final price typed by hand wins; the formula's price stays beside it for comparison.
+  const mf = num(p.finalPrice);
+  if (mf) return { ...res, formulaFinal: res.final, final: mf, manualFinal: true, complete: true, missing: [] };
+  return res;
 }
 
 // Products whose saved price no longer matches today's formula (metal price or factor changed).
@@ -144,7 +148,7 @@ export function drifted(products, settings) {
   for (const p of products) {
     if (p.status === 'sold') continue;
     const r = price(p, settings);
-    if (!r.complete) continue;
+    if (!r.complete || r.manualFinal) continue; // a price typed by hand never changes by itself
     // Saved before the numbers were complete: the new price still needs Servin's approval.
     if (!p.approved) out.push({ p, from: null, to: r.final });
     else if (r.final !== p.approved.price) out.push({ p, from: p.approved.price, to: r.final });

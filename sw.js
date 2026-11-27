@@ -1,6 +1,6 @@
 // Offline-first service worker: app shell is cached; bump VERSION on every release.
 // Every app on this site shares one Cache Storage: each app only ever touches caches with its own prefix.
-const PREFIX = 'seenzhin-', VERSION = PREFIX + 'v21', LEGACY = ['v12'];
+const PREFIX = 'seenzhin-', VERSION = PREFIX + 'v22', LEGACY = ['v12'];
 const SHELL = [
   './', 'index.html', 'app.css', 'manifest.webmanifest',
   'js/app.js', 'js/model.js', 'js/analysis.js', 'js/invoice.js', 'js/db.js', 'js/format.js', 'js/sync.js', 'js/config.js',

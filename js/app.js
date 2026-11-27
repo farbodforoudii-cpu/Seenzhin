@@ -10,7 +10,7 @@ import { sync } from './sync.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
-const APP_VERSION = '۲۱';
+const APP_VERSION = '۲۲';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -296,6 +296,7 @@ function viewSales() {
 }
 
 const itemOf = p => ({
+  listPrice: shownPrice(p, S.settings),
   sub: p.sub, material: p.material, weight: supplierOf(S.settings, p.material) === 'self' ? p.weight : null, level: p.level,
   productId: p.id, photo: p.photos && p.photos[0] || null, price: shownPrice(p, S.settings),
   title: p.title || p.sub || 'محصول',
@@ -311,6 +312,13 @@ function openInvoice(inv, productId) {
 function invSum(d) {
   const t = totals(d);
   return `<span class="c-main"><small>مبلغ کل</small><b>${iso(fmt(t.total))} تومان</b></span>${t.paid && t.remaining ? `<span class="sec">${say(`مانده ${plain(t.remaining)}`)}</span>` : t.total && t.paid >= t.total ? '<span class="st st-paid">تسویه</span>' : ''}`;
+}
+// Under an item's sale price: how it compares with the shop-window price.
+function saleNote(it) {
+  const list = it.listPrice ?? it.price;
+  if (it.price == null || !list || it.price === list) return say(`قیمت ویترین: ${plain(list || 0)} تومان`);
+  const pct = Math.round((1 - it.price / list) * 100);
+  return say(`قیمت ویترین ${plain(list)} تومان؛ ${pct > 0 ? `${pct}٪ ارزان‌تر` : `${-pct}٪ گران‌تر`} فروخته شد`);
 }
 // Pick products; the app already knows each one's price, metal and weight. Servin types only shipping,
 // discount and the amount received. Buyer and note are optional and folded away.
@@ -333,8 +341,14 @@ function drawInvoice() {
   }
   // What the app worked out by itself, so Servin can see it before typing anything.
   if (d.items.length) {
-    h += `<div class="group calcbox">${d.items.map(it => `<div class="cell"><span class="c-main"><b>${esc(it.title)}</b><small>${esc(it.detail || '')}</small></span><span class="amt">${short(it.price)}</span></div>`).join('')}
-      <div class="cell"><span class="sec">جمع محصولات</span><b class="amt">${iso(fmt(t.subtotal))}</b></div></div>`;
+    h += `<div class="group calcbox">${d.items.map((it, i) => {
+      const list = it.listPrice ?? it.price;
+      return `<div class="cell col"><div class="crow"><span class="c-main"><b>${esc(it.title)}</b><small>${esc(it.detail || '')}</small></span></div>
+        <label class="sale"><span>قیمت فروش در این فاکتور</span><input class="bare amt-in" data-inum="item:${i}:price" inputmode="numeric" value="${it.price == null ? '' : fmt(it.price)}"><em class="u">تومان</em></label>
+        <small class="sale-note" data-note="${i}">${saleNote(it)}</small></div>`;
+    }).join('')}
+      <div class="cell"><span class="sec">جمع محصولات</span><b class="amt" id="inv-sub">${iso(fmt(t.subtotal))}</b></div></div>
+    <p class="foot">قیمت هر محصول از ویترین می‌آید؛ اگر ارزان‌تر یا گران‌تر فروختید، همین‌جا عوضش کنید. فقط برای همین فروش است.</p>`;
   }
   h += `<p class="qn"><span class="n">۲</span>ارسال، تخفیف و دریافتی</p>
     <div class="group">${nf('shipping', 'هزینهٔ ارسال', d.shipping, 'ندارد')}${nf('discount', 'تخفیف', d.discount, 'ندارد')}${nf('paid', 'دریافت‌شده', d.paid, 'هنوز هیچ')}</div>
@@ -585,6 +599,7 @@ function drawEditor() {
 // «این قیمت از کجا آمد؟»: every input with its unit and source, then each step with full numbers, then the profit.
 function priceStory(d, r) {
   if (!r.complete) return '';
+  if (r.manualFinal && r.formulaFinal == null) return `<div class="ps"><p class="ps-t">قیمت دستی</p><div class="ps-r"><span>این قیمت را خودتان گذاشته‌اید<small>فرمول هنوز کامل نیست؛ با کامل شدنش، قیمت فرمول کنارش دیده می‌شود.</small></span></div></div>`;
   const st = S.settings, n = v => `${iso(fmt(v))} تومان`, mt = matOf(d.material), lv = levelOf(d.level);
   const self = supplierOf(st, d.material) === 'self', g = st.prices[d.material];
   const metal = r.material - (d.stone || 0);
@@ -608,8 +623,13 @@ function priceStory(d, r) {
   if (r.material) h += step(++i, 'سهم متریال', say(`(${mt && metal ? mt.name : ''}${metal && d.stone ? ' + ' : ''}${d.stone ? 'سنگ و قطعه‌ها' : ''}) × ضریب متریال ${fmtDec(r.markup)}`), r.materialPart);
   h += step(++i, 'سهم کار و طراحی', say(`هزینهٔ ساخت ${fmt(r.work)} × ضریب «${lv.name}» ${fmtDec(r.factor)}`), r.workPart);
   h += step(++i, 'جمع', say('سهم متریال + سهم کار و طراحی'), r.internal);
-  if (r.step && r.final !== Math.round(r.internal)) h += step(++i, 'گرد به بالا', say(`تا مضرب ${plain(r.step)}`), r.final);
-  h += `<div class="ps-total"><span>قیمت فروش</span><b>${n(r.final)}</b></div></div>`;
+  const ff = r.manualFinal ? r.formulaFinal : r.final;
+  if (r.step && ff !== Math.round(r.internal)) h += step(++i, 'گرد به بالا', say(`تا مضرب ${plain(r.step)}`), ff);
+  if (r.manualFinal) {
+    const diff = Math.round((r.final / ff - 1) * 100);
+    h += `<div class="ps-total sub"><span>قیمت فرمول</span><b>${n(ff)}</b></div>`;
+    h += `<div class="ps-total"><span>قیمت نهایی (دستی)<small>${say(diff ? `${Math.abs(diff)}٪ ${diff < 0 ? 'کمتر' : 'بیشتر'} از فرمول` : 'برابر فرمول')}</small></span><b>${n(r.final)}</b></div></div>`;
+  } else h += `<div class="ps-total"><span>قیمت فروش</span><b>${n(r.final)}</b></div></div>`;
   // 3) what it earns
   const profit = r.final - r.cost;
   h += `<div class="ps"><p class="ps-t">سود این محصول</p>
@@ -633,6 +653,10 @@ function summary(d, r) {
     <div class="big">${r.complete ? `${iso(fmt(r.final))} <small>تومان</small>` : '<span class="none">هنوز کامل نیست</span>'}</div></div></div>`;
   if (r.missing.length) h += `<div class="group"><div class="cell col miss"><b>برای قیمت کامل:</b>${r.missing.map(m => `<span>${say(m.text)}</span>`).join('')}</div></div>`;
   h += priceStory(d, r);
+  const formula = r.manualFinal ? r.formulaFinal : r.final;
+  h += `<div class="stitle">قیمت نهایی دستی (اختیاری)</div><div class="group"><label class="cell"><span>قیمت نهایی</span><input class="bare" data-num="finalPrice" inputmode="numeric" placeholder="${formula ? fmt(formula) : 'مثل فرمول'}" value="${d.finalPrice ? fmt(d.finalPrice) : ''}"><em class="u">تومان</em></label>
+    ${d.finalPrice ? `<button class="cell" data-clearfinal><span class="sec">برگشت به قیمت فرمول${formula ? say(` (${plain(formula)} تومان)`) : ''}</span></button>` : ''}</div>
+    <p class="foot">اگر می‌خواهید این محصول قیمتی جز فرمول داشته باشد. برای یک فروش خاص، قیمت را در خود فاکتور عوض کنید.</p>`;
   h += `<div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}</div>`;
   h += `<p class="lab2">وضعیت</p>${chips('status', STATUSES, d.status)}`;
   h += `<div class="ed-foot">${S.ed.edit ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>مشابه</button>${d.status !== 'sold' && r.complete ? `<button class="btn ghost" data-sell="${d.id}">فاکتور</button>` : ''}` : ''}<button class="btn" data-save>${S.ed.edit ? 'ذخیره' : 'ذخیره در ویترین'}</button></div>`;
@@ -830,6 +854,7 @@ function bind() {
     }
     if (ds.step != null) { S.ed.step = Number(ds.step); drawEditor(); $('#sheet .panel').scrollTop = 0; return; }
     if (ds.usesug) { d.invoice = Number(ds.usesug); return drawEditor(); }
+    if ('clearfinal' in ds) { d.finalPrice = null; return drawEditor(); }
     if (ds.usecalc) { d.invoice = Number(ds.usecalc); return drawEditor(); }
     if (ds.fixinv) { d.invoice = d.invoice * Number(ds.fixinv); return drawEditor(); }
     if (ds.rmphoto) {
@@ -866,6 +891,8 @@ function bind() {
       else if (key.includes('.')) { const [a, b] = key.split('.'); d[a][b] = v; }
       else d[key] = v;
       const sum = $('.inv-sum'); if (sum) sum.innerHTML = invSum(d);
+      const sub = $('#inv-sub'); if (sub) sub.innerHTML = iso(fmt(totals(d).subtotal));
+      if (parts[0] === 'item') { const nt = $(`[data-note="${parts[1]}"]`); if (nt) nt.innerHTML = saleNote(d.items[+parts[1]]); }
       return;
     }
     if (el.dataset.text && S.ed) { S.ed.d[el.dataset.text] = el.value; return; }
@@ -878,6 +905,7 @@ function bind() {
     S.ed.d[key] = v;
     const r = price(S.ed.d, S.settings), box = $('.ed-price');
     if (box) { box.classList.toggle('ok', r.complete); box.querySelector('b').innerHTML = priceTag(r); }
+    const big = $('.sum-head .big'); if (big && r.complete) big.innerHTML = `${iso(fmt(r.final))} <small>تومان</small>`;
   });
 
   document.addEventListener('change', async e => {

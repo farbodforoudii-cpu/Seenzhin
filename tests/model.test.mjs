@@ -74,3 +74,14 @@ console.log('model ok');
   assert.ok(bronze.missing.some(m => m.key === 'invoice'));                     // bronze: the workshop's figure is needed
   console.log('work cost ok');
 }
+
+// a final price typed by hand wins and never drifts; the formula price stays beside it
+{
+  const s5 = defaultSettings(); Object.assign(s5, { markup: 2, rounding: 0 }); s5.prices.silver = 400000; s5.factors.jewelry.designed = 2.5;
+  const p = { id: 'x', cat: 'jewelry', sub: 'انگشتر', level: 'designed', material: 'silver', weight: 7, invoice: 2000000, status: 'available' };
+  const r = price({ ...p, finalPrice: 7300000 }, s5);
+  assert.equal(r.final, 7300000); assert.equal(r.formulaFinal, 7 * 400000 * 2 + 2000000 * 2.5); assert.equal(r.manualFinal, true);
+  s5.prices.silver = 500000;
+  assert.equal(drifted([{ ...p, finalPrice: 7300000, approved: { price: 7300000 } }], s5).length, 0);
+  console.log('manual final ok');
+}
