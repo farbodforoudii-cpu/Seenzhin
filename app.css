@@ -330,3 +330,16 @@ input.full { width: 100%; padding: 0; font-weight: 600; }
 .job.done { border-color: transparent; text-align: center; }
 .job.done b { color: var(--g); }
 .inp textarea { flex: 1; border: 0; background: none; outline: none; padding: 12px 0; font: inherit; font-size: 16px; resize: vertical; }
+
+/* «این قیمت از کجا آمد؟» */
+.story { margin-top: 4px; }
+.ps { background: var(--card); border-radius: 18px; padding: 6px 16px 10px; margin-top: 10px; color: var(--ink); }
+.ps-t { margin: 8px 0 2px; font-size: 12.5px; font-weight: 700; color: var(--acc); }
+.ps-r, .ps-s { display: flex; align-items: center; gap: 10px; padding: 9px 0; font-size: 14.5px; }
+.ps-r + .ps-r, .ps-s + .ps-s { border-top: 1px dashed var(--sep); }
+.ps-r > span, .ps-s > span { flex: 1; display: flex; flex-direction: column; }
+.ps small { color: var(--sec); font-size: 12.5px; line-height: 1.7; }
+.ps b { font-weight: 600; white-space: nowrap; direction: rtl; }
+.ps-s i { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--fill); font-style: normal; font-size: 12px; display: grid; place-items: center; color: var(--sec); }
+.ps-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; padding-top: 10px; border-top: 2px solid var(--sep); }
+.ps-total span { font-weight: 700; } .ps-total b { font-size: 20px; font-weight: 800; }

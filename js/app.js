@@ -10,7 +10,7 @@ import { sync } from './sync.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
-const APP_VERSION = '۲۰';
+const APP_VERSION = '۲۱';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -296,6 +296,7 @@ function viewSales() {
 }
 
 const itemOf = p => ({
+  sub: p.sub, material: p.material, weight: supplierOf(S.settings, p.material) === 'self' ? p.weight : null, level: p.level,
   productId: p.id, photo: p.photos && p.photos[0] || null, price: shownPrice(p, S.settings),
   title: p.title || p.sub || 'محصول',
   detail: [p.sub, matOf(p.material) && p.material !== 'none' ? matOf(p.material).name : '', supplierOf(S.settings, p.material) === 'self' && p.weight ? `${faDigits(p.weight)} گرم` : ''].filter(Boolean).join('، '),
@@ -349,10 +350,15 @@ function drawInvoice() {
 }
 const loadImg = src => new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
 async function invoiceImage(inv) {
-  const logo = await loadImg(S.logo || 'brand/logo-sun.png');
+  // Always the official brand logo; older invoices get their item details from the product itself.
+  const logo = await loadImg('brand/logo-sun.png');
   const ph = {};
-  for (const it of inv.items) if (it.photo) ph[it.photo] = await loadImg(urls.get(it.photo));
-  return renderInvoice(inv, { ...(S.settings.brand || {}), name: 'سینژین' }, logo, id => ph[id] || null);
+  const items = inv.items.map(it => {
+    const p = it.productId && S.products.find(x => x.id === it.productId);
+    return p ? { sub: p.sub, material: p.material, weight: supplierOf(S.settings, p.material) === 'self' ? p.weight : null, level: p.level, ...it, photo: it.photo || (p.photos && p.photos[0]) } : it;
+  });
+  for (const it of items) if (it.photo) ph[it.photo] = await loadImg(urls.get(it.photo));
+  return renderInvoice({ ...inv, items }, { ...(S.settings.brand || {}) }, logo, id => ph[id] || null);
 }
 async function showInvoice(id) {
   const inv = S.invoices.find(i => i.id === id);
@@ -451,9 +457,8 @@ function viewSettings() {
   h += `<div class="stitle">گرد کردن قیمت به بالا</div><div class="group enter"><div class="cell"><div class="seg wide">${ROUNDING.map(r => `<button class="${st.rounding === r ? 'on' : ''}" data-round="${r}">${r ? short(r) : 'هیچ'}</button>`).join('')}</div></div></div>`;
   const B = st.brand || {};
   h += `<div class="stitle">روی فاکتور</div><div class="group enter">
-    <label class="cell"><span>لوگو</span>${S.logo ? `<img class="logo-mini" src="${S.logo}" alt="">` : '<span class="sec">انتخاب تصویر</span>'}${svg('chev')}<input type="file" accept="image/*" data-logo hidden></label>
-    ${['instagram:اینستاگرام:seenzhin', 'phone:تلفن:۰۹۱۲…', 'thanks:پیام پایانی:از انتخاب شما سپاسگزاریم'].map(x => { const [k, l, ph] = x.split(':'); return `<label class="cell"><span>${l}</span><input class="bare txt" data-brand="${k}" placeholder="${ph}" value="${esc(B[k] || '')}"></label>`; }).join('')}
-  </div><p class="foot">این‌ها فقط روی همین دستگاه می‌مانند و روی هر فاکتور چاپ می‌شوند.</p>`;
+    ${['instagram:اینستاگرام:seenzhin', 'phone:تلفن:۰۹۱۲…', 'thanks:پیام پایانی:از انتخاب شما سپاسگزاریم', 'care:نکتهٔ نگهداری:دور از رطوبت و عطر نگه دارید'].map(x => { const [k, l, ph] = x.split(':'); return `<label class="cell"><span>${l}</span><input class="bare txt" data-brand="${k}" placeholder="${ph}" value="${esc(B[k] || '')}"></label>`; }).join('')}
+  </div><p class="foot">روی هر فاکتور چاپ می‌شوند؛ لوگوی رسمی سینژین همیشه بالای فاکتور است.</p>`;
   h += `<div class="stitle">پشتیبان</div><div class="group enter"><button class="cell" data-export><span>گرفتن فایل پشتیبان</span>${svg('chev')}</button>
     <label class="cell"><span>بازگردانی از فایل</span>${svg('chev')}<input type="file" accept="application/json" data-import hidden></label></div>
     <p class="foot">داده‌ها روی همین دستگاه و، با حساب مشترک، روی سرور است؛ هر چند وقت یک پشتیبان بگیرید.</p>
@@ -577,6 +582,43 @@ function drawEditor() {
   panel.innerHTML = h;
 }
 
+// «این قیمت از کجا آمد؟»: every input with its unit and source, then each step with full numbers, then the profit.
+function priceStory(d, r) {
+  if (!r.complete) return '';
+  const st = S.settings, n = v => `${iso(fmt(v))} تومان`, mt = matOf(d.material), lv = levelOf(d.level);
+  const self = supplierOf(st, d.material) === 'self', g = st.prices[d.material];
+  const metal = r.material - (d.stone || 0);
+  const row = (k, v, note = '') => `<div class="ps-r"><span>${k}${note ? `<small>${note}</small>` : ''}</span><b>${v}</b></div>`;
+  const step = (i, k, how, v) => `<div class="ps-s"><i>${faDigits(i)}</i><span>${k}<small>${how}</small></span><b>${n(v)}</b></div>`;
+  let h = `<details class="explain story" open><summary>این قیمت از کجا آمد؟</summary>`;
+  // 1) what we know about the piece
+  h += `<div class="ps"><p class="ps-t">مشخصات</p>
+    ${row('محصول', esc([catOf(d.cat) && catOf(d.cat).name, d.sub].filter(Boolean).join('، ')))}
+    ${row('سطح کار', lv ? lv.name : '—', lv ? esc(lv.hint) : '')}
+    ${row('فلز', mt ? mt.name : '—', self ? 'خود سینژین تأمین می‌کند' : supplierOf(st, d.material) === 'workshop' ? 'کارگاه تأمین می‌کند؛ داخل هزینهٔ ساخت' : '')}
+    ${self && d.weight ? row('وزن', `${iso(fmtDec(d.weight))} گرم`) : ''}
+    ${self && g ? row('قیمت روز هر گرم', n(g), st.pricesAt && st.pricesAt[d.material] ? `به‌روز شده ${new Intl.DateTimeFormat('fa-IR-u-ca-persian', { day: 'numeric', month: 'long' }).format(new Date(st.pricesAt[d.material]))}` : '') : ''}
+    ${row('سنگ و قطعه‌ها', d.stone ? n(d.stone) : 'ندارد')}
+    ${row('هزینهٔ ساخت', r.invoice != null ? n(r.invoice) : n(r.work), r.invoice != null ? 'ریخته‌گری، کار تیم و کارگاه با هم' : [r.casting ? `ریخته‌گری ${plain(r.casting)}` : '', r.labour ? `کار تیم ${plain(r.labour)}` : ''].filter(Boolean).join(' + '))}
+  </div>`;
+  // 2) the calculation, step by step
+  let i = 0;
+  h += `<div class="ps"><p class="ps-t">محاسبه</p>`;
+  if (metal) h += step(++i, `هزینهٔ ${mt.name}`, say(`${fmtDec(d.weight)} گرم × ${fmt(g)} تومان`), metal);
+  if (r.material) h += step(++i, 'سهم متریال', say(`(${mt && metal ? mt.name : ''}${metal && d.stone ? ' + ' : ''}${d.stone ? 'سنگ و قطعه‌ها' : ''}) × ضریب متریال ${fmtDec(r.markup)}`), r.materialPart);
+  h += step(++i, 'سهم کار و طراحی', say(`هزینهٔ ساخت ${fmt(r.work)} × ضریب «${lv.name}» ${fmtDec(r.factor)}`), r.workPart);
+  h += step(++i, 'جمع', say('سهم متریال + سهم کار و طراحی'), r.internal);
+  if (r.step && r.final !== Math.round(r.internal)) h += step(++i, 'گرد به بالا', say(`تا مضرب ${plain(r.step)}`), r.final);
+  h += `<div class="ps-total"><span>قیمت فروش</span><b>${n(r.final)}</b></div></div>`;
+  // 3) what it earns
+  const profit = r.final - r.cost;
+  h += `<div class="ps"><p class="ps-t">سود این محصول</p>
+    ${row('هزینهٔ واقعی', n(r.cost), 'فلز + سنگ و قطعه‌ها + هزینهٔ ساخت')}
+    ${row('سود', n(profit), say(`${Math.round(profit / r.final * 100)}٪ از قیمت فروش؛ قیمت ${fmtDec(Math.round(r.final / r.cost * 10) / 10)} برابر هزینه`))}
+  </div></details>`;
+  return h;
+}
+
 function summary(d, r) {
   const cat = catOf(d.cat), lv = levelOf(d.level), mt = matOf(d.material);
   const ph = d.photos[0] && urls.get(d.photos[0]);
@@ -590,12 +632,7 @@ function summary(d, r) {
   let h = `<div class="sum-head">${ph ? `<img src="${ph}" alt="">` : ''}<div><h2>${esc(d.title || d.sub || 'محصول تازه')}</h2>
     <div class="big">${r.complete ? `${iso(fmt(r.final))} <small>تومان</small>` : '<span class="none">هنوز کامل نیست</span>'}</div></div></div>`;
   if (r.missing.length) h += `<div class="group"><div class="cell col miss"><b>برای قیمت کامل:</b>${r.missing.map(m => `<span>${say(m.text)}</span>`).join('')}</div></div>`;
-  if (r.complete) {
-    h += `<details class="explain"><summary>چطور حساب شد؟</summary><div class="calc">
-      ${r.material ? `<div class="cl"><span>متریال<small>${say(`(فلز ${plain(r.material - (d.stone || 0))} + سنگ ${plain(d.stone || 0)}) × ${r.markup}`)}</small></span><b>${short(r.materialPart)}</b></div>` : ''}
-      <div class="cl"><span>کار و طراحی<small>${say(`(${[r.casting ? `ریخته‌گری ${plain(r.casting)}` : '', r.invoice != null ? `هزینهٔ ساخت ${plain(r.invoice)}` : '', r.labour ? `کار تیم ${plain(r.labour)}` : ''].filter(Boolean).join(' + ')}) × ضریب ${lv.name} ${r.factor}`)}</small></span><b>${short(r.workPart)}</b></div>
-      ${r.step ? `<div class="cl"><span>گرد به بالا<small>${say(`تا مضرب ${plain(r.step)}`)}</small></span><b>${short(r.final)}</b></div>` : ''}</div></details>`;
-  }
+  h += priceStory(d, r);
   h += `<div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}</div>`;
   h += `<p class="lab2">وضعیت</p>${chips('status', STATUSES, d.status)}`;
   h += `<div class="ed-foot">${S.ed.edit ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>مشابه</button>${d.status !== 'sold' && r.complete ? `<button class="btn ghost" data-sell="${d.id}">فاکتور</button>` : ''}` : ''}<button class="btn" data-save>${S.ed.edit ? 'ذخیره' : 'ذخیره در ویترین'}</button></div>`;
