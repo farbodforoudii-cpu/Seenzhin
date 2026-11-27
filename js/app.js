@@ -4,13 +4,13 @@ import {
   defaultSettings, catOf, formulaOf, matOf, levelOf, supplierOf, price, drifted, setupSteps,
 } from './model.js';
 import { fmt, fmtDec, iso, parseNum, esc, faDigits, short, shortParts } from './format.js';
-import { insights, suggestInvoice, marketGap, shownPrice } from './analysis.js';
+import { insights, suggestInvoice, marketGap, shownPrice, jobsFor } from './analysis.js';
 import { totals, nextNumber, noFa, STATUS_NAME, renderInvoice } from './invoice.js';
 import { sync } from './sync.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
-const APP_VERSION = '۱۹';
+const APP_VERSION = '۲۰';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -98,6 +98,7 @@ async function load() {
   S.logo = lg ? URL.createObjectURL(lg) : null;
   S.log = (await db.all('log')).sort((a, b) => b.at - a.at).slice(0, 300);
   S.who = (await db.get('who')) || '';
+  S.jobs = (await db.get('jobs')) || { day: '', id: null, snooze: {}, rest: false };
 }
 async function boot() {
   await load();
@@ -169,6 +170,29 @@ function line(x) {
 }
 
 // ---------- home: the shop window ----------
+// One small job a day (never more): picked from jobsFor, kept for the day, «بعداً» rests it for 3 days.
+function todayJob() {
+  const J = S.jobs, today = new Date().toDateString(), now = Date.now();
+  const list = jobsFor(S.products, S.settings, now).filter(j => !(J.snooze[j.id] > now));
+  if (J.day === today) {
+    if (J.rest) return null;
+    const still = J.id && list.find(j => j.id === J.id);
+    return still ? { job: still, left: list.length } : J.id ? { done: true } : null;
+  }
+  if (!list.length) return null;
+  Object.assign(J, { day: today, id: list[0].id, rest: false });
+  db.set('jobs', J);
+  return { job: list[0], left: list.length };
+}
+function jobCard() {
+  const x = todayJob();
+  if (!x) return '';
+  if (x.done) return `<div class="job done enter"><b>✓ کار امروز انجام شد</b><small>فردا یک کار کوچک تازه.</small></div>`;
+  const j = x.job;
+  return `<section class="job enter"><span class="job-k">یک کار کوچک برای امروز</span><b>${say(j.title)}</b>${j.why ? `<small>${say(j.why)}</small>` : ''}
+    <div class="job-a"><button class="btn small" data-act="${j.act}">انجامش بده</button>${j.prompt ? `<button class="btn small ghost" data-jobprompt>پرامپت برای GPT</button>` : ''}<button class="link" data-joblater>بعداً</button></div></section>`;
+}
+
 function todo() {
   // What needs Servin now, most urgent first; at most three lines.
   const L = [];
@@ -177,8 +201,6 @@ function todo() {
   for (const g of marketGap(S.settings, S.market)) L.push({ tone: 'o', t: `${MARKET_NAME[g.id]} ${Math.abs(Math.round(g.pct * 100))}٪ ${g.pct > 0 ? 'گران‌تر' : 'ارزان‌تر'} شده است`, d: `بازار ${plain(g.market)}، ثبت‌شده ${plain(g.saved)} تومان هر گرم`, act: 'market:' + g.id, btn: 'به‌روز کن' });
   const dr = drifted(S.products, S.settings);
   if (dr.length) L.push({ tone: 'o', t: `${dr.length} قیمت تازه منتظر تأیید است`, d: 'برای دیدن قیمت قبلی و تازه بزنید', act: 'drift' });
-  const inc = S.products.filter(p => p.status !== 'sold' && !price(p, S.settings).complete);
-  if (inc.length) L.push({ tone: 'r', t: `${inc.length} محصول هنوز قیمت ندارد`, d: price(inc[0], S.settings).missing[0].text, act: 'edit:' + inc[0].id });
   if (sync.state.key && !S.who) L.push({ tone: 'o', t: 'بگویید این گوشی مال کیست', d: 'تا در تاریخچه معلوم باشد چه کسی چه کرده', act: 'settings' });
   if (!sync.state.key) L.push({ tone: 'o', t: 'حساب مشترک را وصل کنید', d: 'تا گوشی شما و سروین همیشه یکی باشند', act: 'settings' });
   else if (sync.state.status === 'error') L.push({ tone: 'r', t: 'همگام‌سازی انجام نشد', d: sync.state.error, act: 'settings' });
@@ -196,6 +218,7 @@ function viewHome() {
   h += `<section class="hero enter"><span class="hero-k">ارزش ویترین</span>
     ${value ? `<div class="hero-n"><b data-count="${value}">${sp.num}</b><small>${sp.unit}</small></div>` : `<div class="hero-n empty"><b>${stock.length ? 'هنوز قیمتی ثبت نشده' : 'خالی'}</b></div>`}
     <span class="hero-s">${say(stock.length ? `جمع قیمت فروش ${avail} محصول موجود${res ? ` و ${res} رزرو` : ''}` : 'هنوز محصولی ثبت نشده است')}</span></section>`;
+  h += jobCard();
   if (T.length) h += `<div class="stitle">کارهای امروز</div><div class="group enter">${T.map(line).join('')}</div>`;
   if (S.products.length) {
     const cats = [{ id: 'all', name: 'همه' }, ...CATEGORIES.filter(c => S.products.some(p => p.cat === c.id))];
@@ -440,7 +463,7 @@ function viewSettings() {
 
 // ---------- product editor: one question per screen ----------
 const STEPS = ['چه محصولی؟', 'سطح کار', 'هزینه‌ها', 'عکس و نام'];
-const blank = () => ({ cat: null, sub: null, level: null, title: '', material: null, weight: null, stone: null, invoice: null, w: null, h: null, status: 'available', note: '', photos: [], _added: [] });
+const blank = () => ({ desc: '', cat: null, sub: null, level: null, title: '', material: null, weight: null, stone: null, invoice: null, w: null, h: null, status: 'available', note: '', photos: [], _added: [] });
 
 function openSheet(html) {
   const sh = $('#sheet');
@@ -542,7 +565,8 @@ function drawEditor() {
   } else if (step === 3) {
     h += `<div class="photos">${d.photos.map(id => `<div class="ph"><img src="${urls.get(id) || ''}" alt=""><button class="rm" data-rmphoto="${id}" aria-label="حذف عکس">×</button></div>`).join('')}
       <label class="addph"><input type="file" accept="image/*" multiple data-photo hidden>${svg('plus')}<small>عکس</small></label></div>
-      <label class="field"><span class="lab">نام محصول</span><span class="inp"><input data-text="title" placeholder="مثلاً انگشتر موج" value="${esc(d.title)}"></span></label>`;
+      <label class="field"><span class="lab">نام محصول</span><span class="inp"><input data-text="title" placeholder="مثلاً انگشتر موج" value="${esc(d.title)}"></span></label>
+      <label class="field"><span class="lab">توضیح کوتاه برای فروش (اختیاری)</span><span class="inp"><textarea data-text="desc" rows="3" placeholder="دو خط برای اینستاگرام و سایت">${esc(d.desc || '')}</textarea></span></label>`;
   } else {
     h += summary(d, r);
   }
@@ -705,6 +729,14 @@ function bind() {
       return;
     }
     if ('syncnow' in ds) return sync.run();
+    if ('joblater' in ds) { const J = S.jobs; J.snooze[J.id] = Date.now() + 3 * 864e5; J.rest = true; await db.set('jobs', J); render(); return island('باشد؛ امروز کار دیگری پیشنهاد نمی‌شود'); }
+    if ('jobprompt' in ds) {
+      const j = jobsFor(S.products, S.settings).find(x => x.id === S.jobs.id);
+      if (!j) return;
+      try { await navigator.clipboard.writeText(j.prompt); island('پرامپت کپی شد؛ در ChatGPT بچسبانید و جواب را اینجا وارد کنید'); }
+      catch { prompt('این متن را کپی کنید و در ChatGPT بچسبانید:', j.prompt); }
+      return;
+    }
     if ('joincode' in ds) {
       const c = $('#sc').value;
       t.disabled = true; t.textContent = 'در حال اتصال…';

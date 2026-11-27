@@ -96,3 +96,62 @@ export function insights(products, st, market, now = Date.now()) {
   if (m) out.push({ tone: 'g', t: `${m.id === 'silver' ? 'نقره' : 'طلا'} ۱۰٪ گران شود، ویترین ${Math.round(m.impact10 / 1e5) / 10} میلیون بیشتر می‌ارزد`, d: `${Math.round(m.grams)} گرم در محصولات موجود.` });
   return { A, items: out };
 }
+
+// ---------- small jobs for Servin: one a day, each makes the data a little more exact ----------
+// Each job: id (stable, so «later» can snooze it), title, why, act (what tapping opens), prompt (for her own ChatGPT,
+// which knows her work well; the answer is short and typed back into the app).
+const DAY_MS = 864e5;
+const fa = n => String(n).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]).replace('.', '٫');
+function describe(p) {
+  const cat = (CATEGORIES.find(c => c.id === p.cat) || {}).name || '';
+  const lv = (LEVELS.find(l => l.id === p.level) || {}).name || '';
+  const metal = { silver: 'نقره', gold: 'طلا', bronze: 'برنز' }[p.material] || '';
+  return `«${p.title || p.sub || 'محصول'}» (${[cat, p.sub, lv, metal && p.weight ? `${metal} ${fa(p.weight)} گرم` : metal].filter(Boolean).join('، ')})`;
+}
+const INTRO = 'من سروین هستم، طراح و سازندهٔ برند جواهرات و آثار دست‌ساز «سینژین». تو از کارها و روند ساخت من زیاد می‌دانی.';
+export function jobsFor(products, st, now = Date.now()) {
+  const out = [];
+  const live = products.filter(p => p.status !== 'sold');
+  // 1) a product without a full price
+  for (const p of live) {
+    const r = price(p, st);
+    if (r.complete) continue;
+    const m = r.missing[0];
+    out.push({ id: 'price:' + p.id, act: 'edit:' + p.id, title: `قیمت ${describe(p)} را کامل کن`, why: m ? m.text : '',
+      prompt: `${INTRO}\nبرای محصول ${describe(p)} لطفاً تخمین بزن:\n۱) کار تیم روی آن (پرداخت، لحیم، آبکاری، مونتاژ) چند ساعت بوده؟\n۲) سنگ و قطعه‌های خریدنی (قلاب، الاستیک، زنجیر…) چه بوده و حدوداً چند تومان؟\nجواب را فقط در دو خط بده: «ساعت: …» و «قطعه‌ها: … تومان».` });
+  }
+  // 2) the same build cost typed for pieces of very different weight: probably a round guess
+  const typed = live.filter(p => typeof p.invoice === 'number' && p.weight && p.cat !== 'panel');
+  const groups = {};
+  for (const p of typed) (groups[p.invoice] ||= []).push(p);
+  for (const [v, ps] of Object.entries(groups)) {
+    if (ps.length < 3) continue;
+    const ws = ps.map(p => p.weight), spread = Math.max(...ws) / Math.min(...ws);
+    if (spread < 1.8) continue;
+    const p = ps.sort((a, b) => b.weight - a.weight)[0];
+    out.push({ id: 'same:' + p.id + ':' + v, act: 'edit:' + p.id, title: `هزینهٔ ساخت ${describe(p)} را دقیق کن`,
+      why: `${fa(ps.length)} محصول با وزن‌های ${fa(Math.min(...ws))} تا ${fa(Math.max(...ws))} گرم همه یک هزینهٔ ساخت دارند؛ احتمالاً تخمینی است.`,
+      prompt: `${INTRO}\nبرای ${describe(p)} هزینهٔ ساخت را دقیق‌تر حساب کن: ریخته‌گری (هر گرم ${st.castPerGram ? fa(st.castPerGram) : '…'} تومان)، ساعت کار تیم روی پرداخت و لحیم و آبکاری و مونتاژ، و قطعه‌های خریدنی.\nجواب را فقط در سه خط بده: «ساعت: …»، «قطعه‌ها: … تومان»، «جمع هزینهٔ ساخت: … تومان».` });
+  }
+  // 3) a hand-built panel priced without its hours
+  for (const p of live.filter(p => p.cat === 'panel' && !p.hours)) {
+    out.push({ id: 'hours:' + p.id, act: 'edit:' + p.id, title: `ساعت کار ${describe(p)} را بپرس`,
+      why: 'تابلو دست‌ساز تیم است؛ ارزش کارش از ساعت کار درمی‌آید.',
+      prompt: `${INTRO}\nتابلوی ${describe(p)} را تیم با دست ساخته. با توجه به آنچه از این کار می‌دانی، ساختنش حدوداً چند ساعت کار برده؟ (طراحی، برش، ساخت، لحیم، پرداخت)\nجواب را فقط در یک خط بده: «ساعت: …».` });
+  }
+  // 4) the silver price not refreshed for a week
+  const at = st.pricesAt && st.pricesAt.silver;
+  if (st.prices && st.prices.silver && (!at || now - at > 7 * DAY_MS)) {
+    out.push({ id: 'silver:' + Math.floor(now / (7 * DAY_MS)), act: 'settings', title: 'قیمت روز نقره را به‌روز کن', why: 'بیش از یک هفته از آخرین به‌روزرسانی گذشته؛ در تنظیمات «استفاده» را بزن.', prompt: '' });
+  }
+  // 5) a product without a photo
+  for (const p of live.filter(p => !(p.photos && p.photos.length))) {
+    out.push({ id: 'photo:' + p.id, act: 'edit:' + p.id, title: `برای ${describe(p)} عکس بگذار`, why: 'عکس روی فاکتور و بعداً روی سایت دیده می‌شود.', prompt: '' });
+  }
+  // 6) a short selling description (for invoices, Instagram and the website later)
+  for (const p of live.filter(p => !(p.desc && p.desc.trim()))) {
+    out.push({ id: 'desc:' + p.id, act: 'edit:' + p.id, title: `یک توضیح کوتاه برای ${describe(p)} بنویس`, why: 'دو خط برای اینستاگرام و سایت؛ GPT کمک می‌کند.',
+      prompt: `${INTRO}\nبرای محصول ${describe(p)} یک توضیح فروش کوتاه بنویس: حداکثر دو جمله، فارسی، با لحن آرام و هنری سینژین (seen for vision, zhin for life)، بدون اغراق و بدون ایموجی. فقط خود متن را بده.` });
+  }
+  return out;
+}
