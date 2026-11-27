@@ -466,26 +466,29 @@ const priceTag = r => (r.complete ? `${short(r.final)} <small>تومان</small>
 // like zeros were left out (e.g. «۱۶۵» for ۱۶۵ میلیون).
 // Cast pieces: our own silver or gold, not a hand-built panel. Their casting is computed from the weight.
 const isCast = d => d.cat && d.cat !== 'panel' && ['silver', 'gold'].includes(d.material) && supplierOf(S.settings, d.material) === 'self';
-function castLine(d) {
-  const fee = S.settings.castPerGram;
-  if (!isCast(d) || d.invoice != null) return '';
-  return `<p class="auto">${d.weight && fee ? say(`ریخته‌گری خودکار: ${d.weight} گرم × ${plain(fee)} = ${plain(d.weight * fee)} تومان`) : say('ریخته‌گری بعد از وارد کردن وزن خودکار حساب می‌شود.')}</p>`;
-}
-function hoursHint(d) {
-  const sug = d.level && S.settings.hoursByLevel ? S.settings.hoursByLevel[d.level] : null;
-  const rate = S.settings.teamHourly;
-  const base = d.cat === 'panel' ? 'ساعت‌هایی که تیم برای ساختن این تابلو گذاشته.' : 'پرداخت، لحیم، آبکاری و مونتاژ.';
-  const ratePart = rate ? say(` هر ساعت ${plain(rate)} تومان.`) : '';
-  return d.hours == null && sug ? `${base}${ratePart} ${say(`معمولاً برای «${levelOf(d.level).name}» ${sug} ساعت`)} <button class="link" data-usehours="${sug}">همین</button>` : base + ratePart;
+// «کمک برای حساب»: works out a «هزینهٔ ساخت» from casting (weight × fee, cast pieces) + team hours × rate,
+// with the usual hours of the chosen level filled in; one tap copies it into the field.
+function workHelper(d) {
+  const st = S.settings, fee = st.castPerGram, rate = st.teamHourly;
+  if (!d.cat || supplierOf(st, d.material) === 'workshop') return '';
+  const usual = d.level && st.hoursByLevel ? st.hoursByLevel[d.level] : null;
+  const hours = d.hours ?? usual;
+  const cast = isCast(d) && d.weight && fee ? d.weight * fee : 0;
+  const labour = hours && rate ? hours * rate : 0;
+  const total = cast + labour;
+  const parts = [cast ? `ریخته‌گری ${d.weight} گرم × ${plain(fee)} = ${plain(cast)}` : '', labour ? `${hours} ساعت کار تیم × ${plain(rate)} = ${plain(labour)}` : ''].filter(Boolean);
+  return `<details class="explain helper" ${d.invoice == null ? 'open' : ''}><summary>کمک برای حساب هزینهٔ ساخت</summary>
+    ${field('hours', 'ساعت کار تیم روی این قطعه', 'ساعت', d.hours, usual && d.hours == null ? say(`معمولاً برای «${levelOf(d.level).name}» ${usual} ساعت؛ همین حساب شده.`) : 'پرداخت، لحیم، آبکاری، مونتاژ' + (d.cat === 'panel' ? '، یا ساختن تابلو.' : '.'), true)}
+    ${total ? `<p class="auto">${say(parts.join(' + '))}<br>${say(`جمع: ${plain(total)} تومان`)} <button class="link" data-usecalc="${Math.round(total / 10000) * 10000}">همین را بگذار</button></p>` : ''}
+  </details>`;
 }
 function invoiceHint(d) {
   if (d.invoice != null && d.invoice > 0 && d.invoice < 10000) {
     return `${say(`${fmt(d.invoice)} تومان خیلی کم است؛ شاید صفرها جا افتاده.`)} <button class="link" data-fixinv="1000">${say(`${fmt(d.invoice)} هزار`)}</button> <button class="link" data-fixinv="1000000">${say(`${fmt(d.invoice)} میلیون`)}</button>`;
   }
-  if (isCast(d)) return d.invoice == null ? 'ریخته‌گری خودکار حساب می‌شود؛ اینجا فقط اگر کارگاه کار دیگری هم کرده.' : 'این مبلغ کل هزینهٔ بیرونی حساب می‌شود و ریخته‌گری جدا اضافه نمی‌شود.';
-  const sg = d.invoice == null ? suggestInvoice(S.products, d) : null;
+  const sg = d.invoice == null && supplierOf(S.settings, d.material) === 'workshop' ? suggestInvoice(S.products, d) : null;
   if (sg) return `${say(`پیشنهاد: ${plain(sg.value)} تومان (از ${sg.n} محصول ${sg.basis})`)} <button class="link" data-usesug="${sg.value}">همین</button>`;
-  return 'مبلغ کامل فاکتور ساخت، از رسید کارگاه.';
+  return 'ریخته‌گری، کار تیم و کارگاه، همه با هم.';
 }
 // A setting the price still needs (level factor, material factor, metal price) can be filled right here,
 // without leaving the product form. Saved to settings and shared with the other phone.
@@ -519,9 +522,8 @@ function drawEditor() {
     h += `<p class="lab2">فلز</p>${chips('material', MATERIALS, d.material)}`;
     if (sup === 'self') h += field('weight', `وزن ${matOf(d.material).name}`, 'گرم', d.weight, 'فلزی که خودتان به کارگاه می‌دهید.', true);
     if (sup === 'workshop') h += `<p class="help">${matOf(d.material).name} را کارگاه می‌دهد؛ هزینه‌اش داخل فاکتور است.</p>`;
-    h += castLine(d);
-    h += field('hours', 'ساعت کار تیم', 'ساعت', d.hours, hoursHint(d), true);
-    h += field('invoice', isCast(d) || d.cat === 'panel' ? 'فاکتور کارگاه دیگر (اگر هست)' : 'فاکتور کارگاه', 'تومان', d.invoice, invoiceHint(d));
+    h += field('invoice', 'هزینهٔ ساخت', 'تومان', d.invoice, invoiceHint(d));
+    h += workHelper(d);
     h += `<div class="inline-fix">${inlineFix(d)}</div>`;
     h += field('stone', 'سنگ و قطعه‌ها', 'تومان', d.stone, 'سنگ، قلاب، الاستیک، زنجیر…؛ اگر ندارد خالی بگذارید.');
     if (formulaOf(d) === 'panel') h += `<div class="two">${field('w', 'عرض', 'سانتی‌متر', d.w, '', true)}${field('h', 'ارتفاع', 'سانتی‌متر', d.h, '', true)}</div>`;
@@ -546,7 +548,7 @@ function summary(d, r) {
   const rows = [
     [0, 'محصول', [cat && cat.name, d.sub].filter(Boolean).join('، ') || '—'],
     [1, 'سطح کار', lv ? lv.name : '—'],
-    [2, 'هزینه‌ها', [mt && mt.name, self && d.weight != null ? `${d.weight} گرم` : '', d.invoice != null ? `کارگاه ${plain(d.invoice)}` : '', d.hours ? `${d.hours} ساعت کار تیم` : '', d.invoice == null && !d.hours ? 'ساعت کار وارد نشده' : ''].filter(Boolean).join('، ')],
+    [2, 'هزینه‌ها', [mt && mt.name, self && d.weight != null ? `${d.weight} گرم` : '', d.invoice != null ? `هزینهٔ ساخت ${plain(d.invoice)}` : 'هزینهٔ ساخت وارد نشده'].filter(Boolean).join('، ')],
     [3, 'نام و عکس', `${d.title || 'بدون نام'}، ${d.photos.length} عکس`],
   ];
   let h = `<div class="sum-head">${ph ? `<img src="${ph}" alt="">` : ''}<div><h2>${esc(d.title || d.sub || 'محصول تازه')}</h2>
@@ -555,7 +557,7 @@ function summary(d, r) {
   if (r.complete) {
     h += `<details class="explain"><summary>چطور حساب شد؟</summary><div class="calc">
       ${r.material ? `<div class="cl"><span>متریال<small>${say(`(فلز ${plain(r.material - (d.stone || 0))} + سنگ ${plain(d.stone || 0)}) × ${r.markup}`)}</small></span><b>${short(r.materialPart)}</b></div>` : ''}
-      <div class="cl"><span>کار و طراحی<small>${say(`(${[r.casting ? `ریخته‌گری ${plain(r.casting)}` : '', r.invoice != null ? `فاکتور ${plain(r.invoice)}` : '', r.labour ? `کار تیم ${plain(r.labour)}` : ''].filter(Boolean).join(' + ')}) × ضریب ${lv.name} ${r.factor}`)}</small></span><b>${short(r.workPart)}</b></div>
+      <div class="cl"><span>کار و طراحی<small>${say(`(${[r.casting ? `ریخته‌گری ${plain(r.casting)}` : '', r.invoice != null ? `هزینهٔ ساخت ${plain(r.invoice)}` : '', r.labour ? `کار تیم ${plain(r.labour)}` : ''].filter(Boolean).join(' + ')}) × ضریب ${lv.name} ${r.factor}`)}</small></span><b>${short(r.workPart)}</b></div>
       ${r.step ? `<div class="cl"><span>گرد به بالا<small>${say(`تا مضرب ${plain(r.step)}`)}</small></span><b>${short(r.final)}</b></div>` : ''}</div></details>`;
   }
   h += `<div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}</div>`;
@@ -733,7 +735,7 @@ function bind() {
     }
     if (ds.step != null) { S.ed.step = Number(ds.step); drawEditor(); $('#sheet .panel').scrollTop = 0; return; }
     if (ds.usesug) { d.invoice = Number(ds.usesug); return drawEditor(); }
-    if (ds.usehours) { d.hours = Number(ds.usehours); return drawEditor(); }
+    if (ds.usecalc) { d.invoice = Number(ds.usecalc); return drawEditor(); }
     if (ds.fixinv) { d.invoice = d.invoice * Number(ds.fixinv); return drawEditor(); }
     if (ds.rmphoto) {
       const id = ds.rmphoto; d.photos = d.photos.filter(x => x !== id);

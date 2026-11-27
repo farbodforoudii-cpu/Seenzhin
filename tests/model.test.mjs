@@ -49,7 +49,7 @@ console.log('model ok');
   Object.assign(s2, { markup: 2.5, rounding: 1000000, teamHourly: 400000 });
   s2.prices.silver = 444730; s2.factors.panel.special = 4;
   const panel = { cat: 'panel', sub: 'بزرگ', level: 'special', material: 'silver', weight: 100 };
-  assert.ok(price(panel, s2).missing.some(m => m.key === 'hours'));           // a hand-built panel needs the team's hours
+  assert.ok(price(panel, s2).missing.some(m => m.key === 'invoice'));         // nothing entered yet
   const r2 = price({ ...panel, hours: 40 }, s2);
   assert.equal(r2.labour, 16000000);
   assert.equal(r2.final, 176000000);                                           // 100g×444,730×2.5 + 40h×400k×4 → up to 1M
@@ -58,19 +58,19 @@ console.log('model ok');
   console.log('team hours ok');
 }
 
-// cast piece: casting = weight × fee automatically, team hours on top; an entered invoice replaces the casting
+// one «هزینهٔ ساخت» field; when empty, casting (weight × fee) + team hours × rate
 {
   const s4 = defaultSettings();
   Object.assign(s4, { markup: 2, rounding: 0, castPerGram: 50000, teamHourly: 400000 });
   s4.prices.silver = 400000; s4.factors.jewelry.designed = 2.5;
   const ear = { cat: 'jewelry', sub: 'گوشواره', level: 'designed', material: 'silver', weight: 10 };
-  assert.ok(price(ear, s4).missing.some(m => m.key === 'hours'));               // the team's hours are needed
+  assert.ok(price(ear, s4).missing.some(m => m.key === 'invoice'));             // nothing entered yet
   const r = price({ ...ear, hours: 5 }, s4);
   assert.equal(r.casting, 500000); assert.equal(r.labour, 2000000);
-  assert.equal(r.final, 10 * 400000 * 2 + (500000 + 2000000) * 2.5);         // 8M + 6.25M
-  const old = price({ ...ear, invoice: 3000000 }, s4);                          // older entry: invoice = whole outside cost
-  assert.equal(old.casting, 0); assert.equal(old.complete, true);
+  assert.equal(r.final, 10 * 400000 * 2 + (500000 + 2000000) * 2.5);           // 8M + 6.25M
+  const typed = price({ ...ear, invoice: 3000000, hours: 5 }, s4);              // a typed figure is the whole work cost
+  assert.equal(typed.casting, 0); assert.equal(typed.labour, 0); assert.equal(typed.work, 3000000);
   const bronze = price({ cat: 'statue', sub: 'مجسمه', level: 'special', material: 'bronze', hours: 5 }, { ...s4, factors: { ...s4.factors, volume: { simple: 2, designed: 3, special: 4 } } });
-  assert.ok(bronze.missing.some(m => m.key === 'invoice'));                     // bronze comes from the workshop: invoice needed
-  console.log('casting and hours ok');
+  assert.ok(bronze.missing.some(m => m.key === 'invoice'));                     // bronze: the workshop's figure is needed
+  console.log('work cost ok');
 }

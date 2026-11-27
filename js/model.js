@@ -97,27 +97,24 @@ export function price(p, settings) {
   const stone = num(p.stone) || 0;
   if (stone) lines.push({ label: 'سنگ و قطعه‌ها', how: null, value: stone });
 
-  // 3) The work.
-  // - A cast piece (our own silver or gold, not a hand-built panel): casting = weight × casting fee, automatic.
-  // - The team's own hand-work (finishing, soldering, plating, assembly; or building a panel): hours × team rate.
-  // - An outside workshop invoice, when there is one. If an invoice was entered it is taken as the whole outside
-  //   cost (older products were entered that way), so casting is not added on top of it.
+  // 3) The work: one number, «هزینهٔ ساخت» (casting, the team's hand-work and any workshop together), the way
+  // Servin enters it. When it is empty, it is worked out: casting (weight × fee, cast pieces only) + team hours ×
+  // team rate. Bronze and other workshop-supplied metal need the workshop's figure.
   const inv = num(p.invoice), hours = num(p.hours), rate = num(settings.teamHourly), fee = num(settings.castPerGram);
   const castable = formula && formula !== 'panel' && sup === 'self';
-  let casting = 0;
-  if (inv == null && castable && num(p.weight)) {
-    if (fee == null) missing.push({ key: 'cast', text: 'هزینهٔ ریخته‌گری هر گرم در تنظیمات وارد نشده است' });
-    else { casting = num(p.weight) * fee; lines.push({ label: 'ریخته‌گری', how: { kind: 'mul', a: num(p.weight), aUnit: 'گرم', b: fee, bUnit: 'تومان' }, value: casting }); }
-  }
-  if (inv != null) lines.push({ label: 'فاکتور کارگاه', how: null, value: inv });
-  else if (sup === 'workshop') missing.push({ key: 'invoice', text: 'فاکتور کارگاه را وارد کنید (فلز را کارگاه داده)' });
-  else if (!hours) missing.push({ key: 'hours', text: 'ساعت کار تیم را وارد کنید' });
-  let labour = 0;
-  if (hours) {
+  let casting = 0, labour = 0;
+  if (inv != null) lines.push({ label: 'هزینهٔ ساخت', how: null, value: inv });
+  else if (sup === 'workshop') missing.push({ key: 'invoice', text: 'هزینهٔ ساخت کارگاه را وارد کنید (فلز را کارگاه داده)' });
+  else if (!hours) missing.push({ key: 'invoice', text: 'هزینهٔ ساخت را وارد کنید' });
+  else {
+    if (castable && num(p.weight)) {
+      if (fee == null) missing.push({ key: 'cast', text: 'هزینهٔ ریخته‌گری هر گرم در تنظیمات وارد نشده است' });
+      else { casting = num(p.weight) * fee; lines.push({ label: 'ریخته‌گری', how: { kind: 'mul', a: num(p.weight), aUnit: 'گرم', b: fee, bUnit: 'تومان' }, value: casting }); }
+    }
     if (rate == null) missing.push({ key: 'hourly', text: 'ارزش هر ساعت کار تیم در تنظیمات وارد نشده است' });
     else { labour = hours * rate; lines.push({ label: 'کار تیم', how: { kind: 'mul', a: hours, aUnit: 'ساعت', b: rate, bUnit: 'تومان' }, value: labour }); }
   }
-  const work = (inv || 0) + casting + labour;
+  const work = inv != null ? inv : casting + labour;
 
   // 4) Expensive materials (metal we supply + stones) take a small material factor; the workshop work takes the
   // level factor that carries Servin's design value. Pattern used by independent jewellers (Metalsmith Society):
