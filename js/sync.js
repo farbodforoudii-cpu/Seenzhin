@@ -31,13 +31,6 @@ export async function deriveKey(user, pass) {
   return 'SZ1-' + [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 export const cleanUser = u => String(u || '').trim().toLowerCase();
-// A short public fingerprint of the account (4 letters): two phones are in the same account only if it matches.
-async function fingerprint(key) {
-  if (!key) return '';
-  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('fp:' + key)));
-  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return [...h.slice(0, 4)].map(b => A[b % 32]).join('');
-}
 
 const recId = (kind, key) => `s:${kind}:${key}`;
 const saveMeta = () => raw.set('syncMeta', S.meta);
@@ -128,7 +121,6 @@ export const sync = {
     S.cursor = (await db.get('syncCursor')) || null;
     S.last = (await db.get('syncLast')) || null;
     S.meta = (await db.get('syncMeta')) || S.meta;
-    S.fp = await fingerprint(S.key);
     S.status = S.key ? 'idle' : 'off';
     changes.onWrite = S.key ? track : null;
     addEventListener('online', () => sync.run());
@@ -150,7 +142,7 @@ export const sync = {
       if (!(await confirmNew(user))) return false;
       await rpc('eco_create_space', { p_key: key }).catch(err => { throw new Error(persian(err)); });
     }
-    S.key = key; S.user = user; S.cursor = null; S.fp = await fingerprint(key);
+    S.key = key; S.user = user; S.cursor = null;
     S.meta = { at: {}, dirty: {}, gone: {} };
     await raw.set('syncKey', key); await raw.set('syncUser', user); await raw.set('syncCursor', null); await saveMeta();
     changes.onWrite = track;
@@ -166,7 +158,7 @@ export const sync = {
 
   // Leave the account on this device only; data here and on the server stay.
   async signOut() {
-    S.key = null; S.user = null; S.cursor = null; S.fp = ''; S.status = 'off';
+    S.key = null; S.user = null; S.cursor = null; S.status = 'off';
     changes.onWrite = null;
     await raw.set('syncKey', null); await raw.set('syncUser', null);
     emit();

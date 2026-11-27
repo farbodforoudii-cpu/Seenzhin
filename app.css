@@ -316,4 +316,3 @@ input.full { width: 100%; padding: 0; font-weight: 600; }
 .undo button { flex: none; background: var(--acc); color: #fff; font-weight: 700; font-size: 14px; padding: 8px 14px; border-radius: 12px; }
 
 .hero-n.empty b { font-size: 22px; font-weight: 700; letter-spacing: 0; }
-.fp { font-family: ui-monospace, Menlo, monospace; letter-spacing: 3px; direction: ltr; }
