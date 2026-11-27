@@ -376,13 +376,18 @@ function viewSettings() {
       <label class="cell"><span>نام کاربری</span><input class="bare txt" id="su" autocomplete="username" autocapitalize="off" placeholder="مثلاً seenzhin"></label>
       <label class="cell"><span>رمز</span><input class="bare txt" id="sp" type="password" autocomplete="current-password" placeholder="دست‌کم ۶ حرف"></label></div>
       <div class="actions-row"><button class="btn" data-signin>ورود</button></div>
-      <p class="foot">شما و سروین با همین یک نام و رمز وارد شوید؛ هر چه روی یک گوشی ثبت شود، روی گوشی دیگر هم می‌آید. اول سروین وارد شود.</p>`;
+      <p class="foot">شما و سروین با همین یک نام و رمز وارد شوید؛ هر چه روی یک گوشی ثبت شود، روی گوشی دیگر هم می‌آید.</p>
+      <div class="stitle">یا وصل شدن با کد اتصال</div><div class="group enter">
+        <label class="cell"><input class="bare txt" id="sc" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="کدی که از گوشی دیگر فرستاده شده"></label></div>
+      <div class="actions-row"><button class="btn ghost" data-joincode>اتصال با کد</button></div>
+      <p class="foot">مطمئن‌ترین راه: روی گوشی‌ای که حساب دارد «کپی کد اتصال» را بزنید، کد را بفرستید و اینجا بچسبانید.</p>`;
   } else {
     const when = Y.last ? new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit' }).format(new Date(Y.last)) : '';
     const st = Y.status === 'syncing' ? 'در حال همگام‌سازی…' : Y.status === 'error' ? Y.error : when ? `آخرین همگام‌سازی ساعت ${when}` : '';
     h += `<div class="stitle">حساب مشترک</div><div class="group enter">
       <div class="cell"><span class="c-main"><b>${esc(Y.user)}</b><small class="${Y.status === 'error' ? 'err' : ''}">${esc(st)}</small></span><button class="pill" data-syncnow>الان</button></div>
       <div class="cell"><span>شناسهٔ حساب</span><b class="fp">${esc(Y.fp || '')}</b></div>
+      <button class="cell" data-copycode><span>کپی کد اتصال برای گوشی دیگر</span>${svg('chev')}</button>
       <button class="cell danger-row" data-signout><span>خروج از حساب روی این گوشی</span></button></div>
       <p class="foot">هر تغییر چند ثانیه بعد روی گوشی دیگر هم می‌آید. شناسهٔ حساب روی هر دو گوشی باید یکی باشد؛ اگر فرق دارد، نام یا رمز یکی نیست.</p>`;
   }
@@ -687,12 +692,26 @@ function bind() {
       const u = $('#su').value, p = $('#sp').value;
       t.disabled = true; t.textContent = 'در حال ورود…';
       try {
-        const ok = await sync.signIn(u, p, async user => confirm(`حسابی به نام «${user}» نیست. ساخته شود؟\n(اگر سروین قبلاً حساب ساخته، نام یا رمز را دوباره بررسی کنید.)`));
+        const ok = await sync.signIn(u, p, async user => confirm(`با این نام و رمز حسابی پیدا نشد.\n\nاگر می‌خواهید به حساب سروین وصل شوید، Cancel بزنید و از «اتصال با کد» استفاده کنید.\n\nفقط اگر می‌خواهید یک حساب کاملاً تازه و خالی بسازید، OK بزنید.`));
         if (ok) { await load(); render(); island('وارد شدید؛ همه‌چیز همگام شد'); } else render();
       } catch (e) { island(e.message); render(); }
       return;
     }
     if ('syncnow' in ds) return sync.run();
+    if ('joincode' in ds) {
+      const c = $('#sc').value;
+      t.disabled = true; t.textContent = 'در حال اتصال…';
+      try { await sync.joinCode(c); await load(); render(); island('وصل شدید؛ اطلاعات حساب آمد'); }
+      catch (e) { island(e.message); render(); }
+      return;
+    }
+    if ('copycode' in ds) {
+      const code = sync.shareCode();
+      try { if (navigator.share) { await navigator.share({ text: code }); return; } } catch { /* cancelled */ }
+      try { await navigator.clipboard.writeText(code); island('کد اتصال کپی شد؛ برای گوشی دیگر بفرستید'); }
+      catch { prompt('این کد را کپی کنید و بفرستید:', code); }
+      return;
+    }
     if (ds.who) { S.who = ds.who; await db.set('who', ds.who); render(); return island(`این گوشی: ${WHO[ds.who]}`); }
     if ('logall' in ds) { S.logAll = true; return render(); }
     if ('signout' in ds) { if (confirm('از حساب مشترک روی این گوشی خارج شوید؟ داده‌ها پاک نمی‌شوند.')) { await sync.signOut(); render(); } return; }

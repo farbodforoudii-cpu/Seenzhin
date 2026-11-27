@@ -151,6 +151,24 @@ export const sync = {
       if (!(await confirmNew(user))) return false;
       await rpc('eco_create_space', { p_key: key }).catch(err => { throw new Error(persian(err)); });
     }
+    return sync.start(key, user);
+  },
+
+  // Join with the code copied on the other phone: exactly the same account, nothing to retype.
+  // The code never creates a new account.
+  async joinCode(input) {
+    const t = String(input || '').trim().replace(/\s+/g, '');
+    const m = t.match(/^(?:([^~]*)~)?(SZ1-[0-9a-f]{64})$/i);
+    if (!m) throw new Error('این کد کامل نیست؛ کد را دوباره از گوشی دیگر کپی کنید.');
+    const key = 'SZ1-' + m[2].slice(4).toLowerCase();
+    try { await rpc('eco_pull', { p_key: key, p_app: APP, p_limit: 1 }); }
+    catch (e) { throw new Error(/unknown sync key/i.test(e.message) ? 'حسابی با این کد پیدا نشد.' : persian(e)); }
+    return sync.start(key, cleanUser(m[1] || '') || 'حساب مشترک');
+  },
+  // The code to paste on another phone: «username~key».
+  shareCode: () => (S.key ? `${S.user || ''}~${S.key}` : ''),
+
+  async start(key, user) {
     S.key = key; S.user = user; S.cursor = null; S.fp = await fingerprint(key);
     S.meta = { at: {}, dirty: {}, gone: {} };
     await raw.set('syncKey', key); await raw.set('syncUser', user); await raw.set('syncCursor', null); await saveMeta();
