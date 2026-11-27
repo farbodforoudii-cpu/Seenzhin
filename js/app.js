@@ -367,8 +367,9 @@ function viewSettings() {
     const st = Y.status === 'syncing' ? 'در حال همگام‌سازی…' : Y.status === 'error' ? Y.error : when ? `آخرین همگام‌سازی ساعت ${when}` : '';
     h += `<div class="stitle">حساب مشترک</div><div class="group enter">
       <div class="cell"><span class="c-main"><b>${esc(Y.user)}</b><small class="${Y.status === 'error' ? 'err' : ''}">${esc(st)}</small></span><button class="pill" data-syncnow>الان</button></div>
+      <div class="cell"><span>شناسهٔ حساب</span><b class="fp">${esc(Y.fp || '')}</b></div>
       <button class="cell danger-row" data-signout><span>خروج از حساب روی این گوشی</span></button></div>
-      <p class="foot">هر تغییر چند ثانیه بعد روی گوشی دیگر هم می‌آید.</p>`;
+      <p class="foot">هر تغییر چند ثانیه بعد روی گوشی دیگر هم می‌آید. شناسهٔ حساب روی هر دو گوشی باید یکی باشد؛ اگر فرق دارد، نام یا رمز یکی نیست.</p>`;
   }
   h += `<div class="stitle">قیمت فلز، هر گرم</div><div class="group enter">`;
   for (const m of metals) {
@@ -402,7 +403,7 @@ function viewSettings() {
 }
 
 // ---------- product editor: one question per screen ----------
-const STEPS = ['چه محصولی؟', 'سطح کار', 'هزینه‌ها', 'عکس و نام'];
+const STEPS = ['چه محصولی؟', 'سطح کار', 'قیمت', 'عکس و نام'];
 const blank = () => ({ cat: null, sub: null, level: null, title: '', material: null, weight: null, stone: null, invoice: null, w: null, h: null, status: 'available', note: '', photos: [], _added: [] });
 
 function openSheet(html) {
@@ -417,6 +418,7 @@ function closeSheet() {
 }
 function openEditor(p, step) {
   const d = p ? Object.assign(blank(), JSON.parse(JSON.stringify(p)), { _added: [] }) : blank();
+  if (!d.priceMode) d.priceMode = d.manualPrice || d.invoice == null ? 'manual' : 'formula';
   S.ed = { d, step: step ?? (p ? 4 : 0), edit: !!p };
   openSheet('');
   drawEditor();
@@ -449,9 +451,15 @@ function drawEditor() {
     const cat = catOf(d.cat);
     if (cat) h += `<p class="lab2">کدام؟</p>${chips('sub', cat.subs.map(s => ({ id: s, name: s })), d.sub)}`;
   } else if (step === 1) {
-    h += chips('level', LEVELS, d.level, true) + `<p class="help">هر سطح ضریب خودش را دارد؛ سطح بالاتر یعنی ارزش طراحی بیشتر.</p>`;
+    h += chips('level', LEVELS, d.level, true) + `<p class="help">اگر قیمت را خودتان می‌دانید، می‌توانید «بعدی» را بزنید و رد شوید.</p>`;
   } else if (step === 2) {
     const sup = supplierOf(S.settings, d.material);
+    h += chips('priceMode', [{ id: 'manual', name: 'قیمت را می‌دانم' }, { id: 'formula', name: 'از روی هزینه حساب شود' }], d.priceMode);
+    if (d.priceMode === 'manual') {
+      h += field('manualPrice', 'قیمت فروش', 'تومان', d.manualPrice, 'همان قیمتی که به مشتری می‌گویید.');
+      h += `<p class="lab2">فلز و وزن (اختیاری؛ روی فاکتور نوشته می‌شود)</p>${chips('material', MATERIALS, d.material)}`;
+      if (d.material && d.material !== 'none') h += field('weight', `وزن ${matOf(d.material).name}`, 'گرم', d.weight, '', true);
+    } else {
     h += `<p class="lab2">فلز</p>${chips('material', MATERIALS, d.material)}`;
     if (sup === 'self') h += field('weight', `وزن ${matOf(d.material).name}`, 'گرم', d.weight, 'فلزی که خودتان به کارگاه می‌دهید.', true);
     if (sup === 'workshop') h += `<p class="help">${matOf(d.material).name} را کارگاه می‌دهد؛ هزینه‌اش داخل فاکتور است.</p>`;
@@ -459,6 +467,7 @@ function drawEditor() {
     h += field('invoice', 'فاکتور کارگاه', 'تومان', d.invoice, sg ? `${say(`محصولات مشابه معمولاً ${plain(sg.value)} تومان`)} <button class="link" data-usesug="${sg.value}">همین</button>` : 'مبلغ کامل فاکتور ساخت.');
     h += field('stone', 'سنگ', 'تومان', d.stone, 'اگر سنگ ندارد، خالی بگذارید.');
     if (formulaOf(d) === 'panel') h += `<div class="two">${field('w', 'عرض', 'سانتی‌متر', d.w, '', true)}${field('h', 'ارتفاع', 'سانتی‌متر', d.h, '', true)}</div>`;
+    }
   } else if (step === 3) {
     h += `<div class="photos">${d.photos.map(id => `<div class="ph"><img src="${urls.get(id) || ''}" alt=""><button class="rm" data-rmphoto="${id}" aria-label="حذف عکس">×</button></div>`).join('')}
       <label class="addph"><input type="file" accept="image/*" multiple data-photo hidden>${svg('plus')}<small>عکس</small></label></div>
@@ -467,7 +476,7 @@ function drawEditor() {
     h += summary(d, r);
   }
   if (step < 4) {
-    const can = [d.cat, d.level, d.material, true][step];
+    const can = [d.cat, true, true, true][step]; // only the category is required to move on
     h += `<div class="ed-foot">${step ? `<button class="btn ghost" data-step="${step - 1}">قبلی</button>` : ''}<button class="btn" data-step="${step + 1}" ${can ? '' : 'disabled'}>${step === 3 ? 'مرور و ذخیره' : 'بعدی'}</button></div>`;
   }
   panel.innerHTML = h;
@@ -479,14 +488,14 @@ function summary(d, r) {
   const self = supplierOf(S.settings, d.material) === 'self';
   const rows = [
     [0, 'محصول', [cat && cat.name, d.sub].filter(Boolean).join('، ') || '—'],
-    [1, 'سطح کار', lv ? lv.name : '—'],
-    [2, 'هزینه‌ها', [mt && mt.name, self && d.weight != null ? `${d.weight} گرم` : '', d.invoice != null ? `کارگاه ${plain(d.invoice)}` : 'فاکتور وارد نشده'].filter(Boolean).join('، ')],
+    [1, 'سطح کار', lv ? lv.name : 'انتخاب نشده'],
+    [2, 'قیمت', d.priceMode === 'manual' ? (d.manualPrice ? `${plain(d.manualPrice)} تومان` : 'وارد نشده') : [mt && mt.name, self && d.weight != null ? `${d.weight} گرم` : '', d.invoice != null ? `کارگاه ${plain(d.invoice)}` : 'فاکتور وارد نشده'].filter(Boolean).join('، ')],
     [3, 'نام و عکس', `${d.title || 'بدون نام'}، ${d.photos.length} عکس`],
   ];
   let h = `<div class="sum-head">${ph ? `<img src="${ph}" alt="">` : ''}<div><h2>${esc(d.title || d.sub || 'محصول تازه')}</h2>
     <div class="big">${r.complete ? `${iso(fmt(r.final))} <small>تومان</small>` : '<span class="none">هنوز کامل نیست</span>'}</div></div></div>`;
   if (r.missing.length) h += `<div class="group"><div class="cell col miss"><b>برای قیمت کامل:</b>${r.missing.map(m => `<span>${say(m.text)}</span>`).join('')}</div></div>`;
-  if (r.complete) {
+  if (r.complete && !r.manual) {
     h += `<details class="explain"><summary>چطور حساب شد؟</summary><div class="calc">
       ${r.material ? `<div class="cl"><span>متریال<small>${say(`(فلز ${plain(r.material - (d.stone || 0))} + سنگ ${plain(d.stone || 0)}) × ${r.markup}`)}</small></span><b>${short(r.materialPart)}</b></div>` : ''}
       <div class="cl"><span>کار و طراحی<small>${say(`فاکتور ${plain(r.invoice)} × ضریب ${lv.name} ${r.factor}`)}</small></span><b>${short(r.workPart)}</b></div>

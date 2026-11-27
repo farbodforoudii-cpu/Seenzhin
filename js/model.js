@@ -67,6 +67,15 @@ const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
 
 // Price of one product with every step explained. Never guesses: anything missing is listed, not filled in.
 export function price(p, settings) {
+  // Direct price: Servin types the selling price herself; the cost formula is then optional.
+  const mode = p.priceMode || (num(p.manualPrice) ? 'manual' : 'formula');
+  if (mode === 'manual') {
+    const mp = num(p.manualPrice);
+    const missing = [];
+    if (!catOf(p.cat)) missing.push({ key: 'cat', text: 'دسته را انتخاب کنید' });
+    if (!mp) missing.push({ key: 'manualPrice', text: 'قیمت فروش را وارد کنید' });
+    return { manual: true, formula: formulaOf(p), lines: [], cost: null, factor: null, internal: mp, step: 0, final: mp && !missing.length ? mp : null, missing, complete: !!mp && !missing.length };
+  }
   const missing = [];
   const lines = [];
   const formula = formulaOf(p);
@@ -125,7 +134,7 @@ export function drifted(products, settings) {
   for (const p of products) {
     if (p.status === 'sold') continue;
     const r = price(p, settings);
-    if (!r.complete) continue;
+    if (!r.complete || r.manual) continue; // a price Servin typed never changes by itself
     // Saved before the numbers were complete: the new price still needs Servin's approval.
     if (!p.approved) out.push({ p, from: null, to: r.final });
     else if (r.final !== p.approved.price) out.push({ p, from: p.approved.price, to: r.final });

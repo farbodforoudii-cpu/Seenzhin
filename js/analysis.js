@@ -10,10 +10,11 @@ export function analyse(products, st, now = Date.now()) {
   const sold = products.filter(p => p.status === 'sold');
 
   // Stock value: sum of the prices customers see; cost: what was paid (metal at today's price + stone + workshop).
-  let value = 0, cost = 0, priced = 0;
+  let value = 0, cost = 0, priced = 0, vWithCost = 0;
   for (const p of stock) {
     const v = shownPrice(p, st), c = price(p, st).cost;
-    if (v != null && c != null) { value += v; cost += c; priced++; }
+    if (v != null) { value += v; priced++; }
+    if (v != null && c != null) { cost += c; vWithCost += v; }
   }
 
   // Per category (stock and sales together tell what moves).
@@ -47,7 +48,7 @@ export function analyse(products, st, now = Date.now()) {
   const incomplete = stock.map(p => ({ p, r: price(p, st) })).filter(x => !x.r.complete);
 
   return {
-    stockCount: stock.length, priced, value, cost, margin: value ? (value - cost) / value : null,
+    stockCount: stock.length, priced, value, cost, margin: vWithCost ? (vWithCost - cost) / vWithCost : null,
     cats, sold30: s30.length, revenue30: s30.reduce((a, p) => a + (p.approved ? p.approved.price : 0), 0),
     daysToSell: median(days), daysN: days.length, metals, ladder, incomplete,
   };
