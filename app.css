@@ -4,8 +4,9 @@
 :root {
   /* Seenzhin brand palette (brand guide): sand #DBD3C9, mint #D3DED7, gold #B7975B, taupe #ADA89F, charcoal #5A605C.
      Text colours are the palette deepened just enough to read well on ivory. */
-  --bg: #f5f3ef; --bg-2: #d3ded7; --card: #fdfcfa; --fill: #ece8e2; --ink: #3c423e; --sec: #77736b; --ter: #ada89f; --sep: #e2ddd5;
-  --acc: #aa893c; --hero: #d3ded7; --hero-ink: #3c423e; --hero-sec: #66706a;
+  /* Main colour: Seenzhin mint (#D4E1D8, the logo's own background). Cards sit on it in ivory. */
+  --bg: #d4e1d8; --bg-2: #e3ebe5; --card: #fbfaf7; --fill: #ebf0ec; --ink: #363c38; --sec: #646a64; --ter: #9aa39c; --sep: #dfe5e0;
+  --acc: #aa893c; --hero: #fbfaf7; --hero-ink: #363c38; --hero-sec: #646a64;
   --g: #6c8a77; --o: #a2803f; --r: #8f4a4a;
   --shadow: 0 1px 2px rgba(60,66,62,.04), 0 8px 24px rgba(60,66,62,.07);
   --ease: cubic-bezier(.2,.8,.2,1);

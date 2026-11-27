@@ -29,7 +29,7 @@ const dateFa = ts => new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'nume
 // ---------- image ----------
 const W = 1080, PAD = 72, IN = 28, R = W - PAD, L = PAD, TR = R - IN, TL = L + IN; // TR/TL: the one text column edge for every row
 // Seenzhin brand palette: mint #D3DED7, gold #B7975B, sand, charcoal #5A605C (deepened for text).
-const C = { bg: '#f7f5f1', mint: '#d3ded7', ink: '#3c423e', sec: '#77736b', line: '#e2ddd5', acc: '#b7975b', soft: '#ece8e2', ok: '#6c8a77', warn: '#a2803f' };
+const C = { bg: '#d4e1d8', ink: '#363c38', sec: '#5f665f', line: '#b9c8bd', acc: '#b7975b', soft: '#e7ede9', ok: '#56735f', warn: '#8f6f30' };
 
 function wrap(ctx, text, maxW) {
   const words = String(text).split(' '), lines = [];
@@ -56,8 +56,7 @@ export async function renderInvoice(inv, brand, logo, photo) {
   const money = v => `${fmt(v)} تومان`;
   const ltr = (s, x, y, align, color) => { ctx.direction = 'ltr'; txt(s, x, y, align, color); ctx.direction = 'rtl'; };
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-  // brand header on the brand mint, logo centred and unaltered
-  ctx.fillStyle = C.mint; ctx.fillRect(0, 0, W, 300);
+  // the whole page is the brand mint (the logo's own background), logo centred and unaltered
   let y = 60;
   if (logo) {
     const h = 180, w = Math.min(560, logo.naturalWidth * h / logo.naturalHeight);
@@ -81,7 +80,7 @@ export async function renderInvoice(inv, brand, logo, photo) {
 
   // items
   for (const it of items) {
-    rr(ctx, L, y, R - L, rowH - 18, 24); ctx.fillStyle = '#ffffff'; ctx.fill();
+    rr(ctx, L, y, R - L, rowH - 18, 24); ctx.fillStyle = '#fbfaf7'; ctx.fill();
     const img = it.photo ? photo(it.photo) : null, th = rowH - 50, tx = R - 16 - th, ty = y + 16;
     if (img) {
       ctx.save(); rr(ctx, tx, ty, th, th, 18); ctx.clip();
