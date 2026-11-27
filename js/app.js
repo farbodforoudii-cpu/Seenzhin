@@ -10,7 +10,7 @@ import { sync } from './sync.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
-const APP_VERSION = '۲۲';
+const APP_VERSION = '۲۳';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -113,6 +113,7 @@ async function boot() {
   };
   sync.onChange(() => { if (S.tab === 'settings' && !$('#sheet').classList.contains('open')) render(); });
   await sync.init();
+  await repairSold();
   loadMarket();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     // A new version takes over → reload once, so both phones are always on the latest app without reopening.
@@ -122,6 +123,24 @@ async function boot() {
   }
 }
 const saveSettings = () => db.set('settings', S.settings);
+
+// Before v23 a paid invoice overwrote the product's library price with the sale price.
+// Once per product: move that price to soldPrice and give the library its own price back (formula or manual final).
+async function repairSold() {
+  const now = Date.now(), fixed = [];
+  for (const inv of S.invoices) {
+    if (totals(inv).status !== 'paid') continue;
+    for (const it of inv.items || []) {
+      const p = S.products.find(x => x.id === it.productId);
+      if (!p || p.status !== 'sold' || p.soldPrice != null) continue;
+      const r = price(p, S.settings);
+      p.soldPrice = it.price; p.soldInvoice = inv.id; p.updatedAt = now;
+      if (r.complete) p.approved = { price: r.final, at: now };
+      fixed.push(p);
+    }
+  }
+  if (fixed.length) { await db.putMany('products', fixed); render(); }
+}
 
 // Today's silver (999) and 18k gold per gram in toman, from hesab-man's tgju feed on the same GitHub Pages site.
 async function loadMarket() {
@@ -394,12 +413,13 @@ async function saveInvoice() {
   await db.put('invoices', d);
   const i = S.invoices.findIndex(x => x.id === d.id);
   if (i >= 0) S.invoices[i] = d; else S.invoices.unshift(d);
-  // Products follow the invoice: paid in full → sold at the invoice price; deposit or unpaid → reserved.
+  // Products follow the invoice: paid in full → sold; deposit or unpaid → reserved.
+  // The sale price lives on the invoice (and as soldPrice for reports); the library price never changes here.
   const changed = [];
   for (const it of d.items) {
     const p = S.products.find(x => x.id === it.productId);
     if (!p) continue;
-    if (t.status === 'paid') { if (p.status !== 'sold') p.soldAt = d.date; p.status = 'sold'; p.approved = { price: it.price, at: now }; }
+    if (t.status === 'paid') { if (p.status !== 'sold') p.soldAt = d.date; p.status = 'sold'; p.soldPrice = it.price; p.soldInvoice = d.id; p.updatedAt = now; }
     else if (p.status !== 'sold') p.status = 'reserved';
     changed.push(p);
   }
@@ -693,9 +713,8 @@ async function save() {
   const { _added, ...clean } = d;
   const undo = await snap({ products: d.id ? [d.id] : [], photos: prev ? (prev.photos || []).filter(id => !d.photos.includes(id)) : [] });
   const p = Object.assign(clean, { id: d.id || uid(), createdAt: d.createdAt || now, updatedAt: now, approved: r.complete ? { price: r.final, at: now } : null });
-  if (prev && prev.status === 'sold' && p.status === 'sold' && prev.approved) p.approved = prev.approved; // sold price stays
   if (p.status === 'sold' && !(prev && prev.status === 'sold')) p.soldAt = now;
-  if (p.status !== 'sold') delete p.soldAt;
+  if (p.status !== 'sold') { delete p.soldAt; delete p.soldPrice; delete p.soldInvoice; }
   if (prev) for (const id of prev.photos || []) if (!p.photos.includes(id)) { await db.del('photos', id); urls.delete(id); }
   await db.put('products', p);
   const i = S.products.findIndex(x => x.id === p.id);

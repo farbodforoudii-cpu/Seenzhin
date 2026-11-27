@@ -21,7 +21,7 @@ export function analyse(products, st, now = Date.now()) {
     const inStock = stock.filter(p => p.cat === c.id);
     const ratios = inStock.map(p => { const v = shownPrice(p, st), k = price(p, st).cost; return v && k ? v / k : null; }).filter(x => x != null);
     const s30 = sold.filter(p => p.cat === c.id && p.soldAt && now - p.soldAt <= 30 * DAY);
-    return { ...c, stock: inStock.length, sold30: s30.length, revenue30: s30.reduce((a, p) => a + (p.approved ? p.approved.price : 0), 0), ratio: median(ratios) };
+    return { ...c, stock: inStock.length, sold30: s30.length, revenue30: s30.reduce((a, p) => a + (p.soldPrice ?? (p.approved ? p.approved.price : 0)), 0), ratio: median(ratios) };
   });
 
   // Sales in the last 30 days and how long pieces take to sell (sold date − date added).
@@ -48,7 +48,7 @@ export function analyse(products, st, now = Date.now()) {
 
   return {
     stockCount: stock.length, priced, value, cost, margin: value ? (value - cost) / value : null,
-    cats, sold30: s30.length, revenue30: s30.reduce((a, p) => a + (p.approved ? p.approved.price : 0), 0),
+    cats, sold30: s30.length, revenue30: s30.reduce((a, p) => a + (p.soldPrice ?? (p.approved ? p.approved.price : 0)), 0),
     daysToSell: median(days), daysN: days.length, metals, ladder, incomplete,
   };
 }
