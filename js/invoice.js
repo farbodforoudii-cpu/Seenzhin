@@ -71,12 +71,15 @@ export async function renderInvoice(inv, brand, logo, photo) {
   font(400, 28); ltr(faDigits(inv.no), TL, y - 14, 'left', C.sec); txt(dateFa(inv.date), TL, y + 26, 'left', C.sec);
   y += 50; ctx.fillStyle = C.line; ctx.fillRect(L, y, R - L, 2);
 
-  // customer
-  y += 62;
-  font(400, 28); txt('خریدار', TR, y, 'right', C.sec);
-  font(700, 32); txt((inv.customer && inv.customer.name) || '—', TR - 110, y);
-  if (inv.customer && inv.customer.phone) { font(400, 28); ltr(faDigits(inv.customer.phone), TL, y, 'left', C.sec); }
-  y += 46;
+  // customer: only when a name was given (it is optional)
+  const cname = inv.customer && inv.customer.name;
+  if (cname) {
+    y += 62;
+    font(400, 28); txt('خریدار', TR, y, 'right', C.sec);
+    font(700, 32); txt(cname, TR - 110, y);
+    if (inv.customer.phone) { font(400, 28); ltr(faDigits(inv.customer.phone), TL, y, 'left', C.sec); }
+    y += 46;
+  } else y += 40;
 
   // items
   for (const it of items) {

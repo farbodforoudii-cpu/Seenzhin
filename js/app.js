@@ -199,27 +199,26 @@ const itemOf = p => ({
 function openInvoice(inv, productId) {
   const base = inv ? JSON.parse(JSON.stringify(inv)) : { id: uid(), no: nextNumber(S.invoices), date: Date.now(), customer: { name: '', phone: '' }, items: [], shipping: null, discount: null, paid: null, note: '' };
   if (productId) { const p = S.products.find(x => x.id === productId); if (p) base.items.push(itemOf(p)); }
-  if (!base.pay) { const st = totals(base).status; base.pay = st === 'paid' ? 'full' : st === 'deposit' ? 'deposit' : inv ? 'none' : null; }
   S.inv = { d: base, edit: !!inv };
   openSheet('');
   drawInvoice();
 }
-// Paid amount follows the simple choice: «کامل گرفتم» = the whole total, «بیعانه» = what was typed, «هنوز نه» = nothing.
-const paidOf = d => (d.pay === 'full' ? totals({ ...d, paid: 0 }).total : d.pay === 'deposit' ? d.paid || 0 : 0);
 function invSum(d) {
-  const t = totals({ ...d, paid: paidOf(d) });
-  return `<span class="c-main"><small>مبلغ کل</small><b>${iso(fmt(t.total))} تومان</b></span>${d.pay === 'deposit' && t.remaining ? `<span class="sec">${say(`مانده ${plain(t.remaining)}`)}</span>` : ''}`;
+  const t = totals(d);
+  return `<span class="c-main"><small>مبلغ کل</small><b>${iso(fmt(t.total))} تومان</b></span>${t.paid && t.remaining ? `<span class="sec">${say(`مانده ${plain(t.remaining)}`)}</span>` : t.total && t.paid >= t.total ? '<span class="st st-paid">تسویه</span>' : ''}`;
 }
-// One screen, three plain questions: what was sold, to whom, was it paid. Extras are folded away.
+// Pick products; the app already knows each one's price, metal and weight. Servin types only shipping,
+// discount and the amount received. Buyer and note are optional and folded away.
 function drawInvoice() {
   const d = S.inv.d, panel = $('#sheet .panel');
   const chosen = new Set(d.items.map(i => i.productId).filter(Boolean));
   const sellable = S.products.filter(p => (p.status !== 'sold' || chosen.has(p.id)) && shownPrice(p, S.settings) != null);
   const names = [...new Set(S.invoices.map(i => i.customer && i.customer.name).filter(Boolean))];
-  const nf = (key, label, val, ph = '—') => `<label class="field"><span class="lab">${label}</span><span class="inp"><input data-inum="${key}" inputmode="numeric" placeholder="${ph}" value="${val == null ? '' : fmt(val)}"><em>تومان</em></span></label>`;
+  const t = totals(d);
+  const nf = (key, label, val, ph) => `<label class="cell"><span>${label}</span><input class="bare" data-inum="${key}" inputmode="numeric" placeholder="${ph}" value="${val == null ? '' : fmt(val)}"><em class="u">تومان</em></label>`;
   let h = `<div class="ed-top"><button class="x" data-close aria-label="بستن">×</button><span class="sec">${noFa(d.no)}</span></div>
     <h2 class="q">فاکتور فروش</h2>
-    <p class="qn"><span class="n">۱</span>چه چیزی فروختید؟</p>`;
+    <p class="qn"><span class="n">۱</span>محصول را انتخاب کنید</p>`;
   if (sellable.length) {
     h += `<div class="sel">${sellable.map(p => { const on = chosen.has(p.id), ph = p.photos && p.photos[0] && urls.get(p.photos[0]);
       return `<button class="sel-i ${on ? 'on' : ''}" data-itog="${p.id}">${ph ? `<img src="${ph}" alt="">` : `<i class="noph">${esc(p.sub || '')}</i>`}<span class="tick">✓</span>
@@ -227,16 +226,20 @@ function drawInvoice() {
   } else {
     h += `<div class="group"><div class="cell col"><b>هنوز محصول قیمت‌داری در ویترین نیست.</b><span class="sec">اول محصول را در ویترین ثبت کنید؛ بعد اینجا با یک لمس انتخابش می‌کنید.</span></div></div>`;
   }
-  h += `<p class="qn"><span class="n">۲</span>به چه کسی؟</p>
-    <label class="field"><span class="inp"><input data-itext="customer.name" list="custs" placeholder="نام مشتری" value="${esc(d.customer.name)}"></span></label>
-    <datalist id="custs">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
-    <p class="qn"><span class="n">۳</span>پول را گرفتید؟</p>
-    <div class="chips wrap pay">${[['full', 'کامل گرفتم'], ['deposit', 'بیعانه گرفتم'], ['none', 'هنوز نه']].map(([k, l]) => `<button class="chip ${d.pay === k ? 'on' : ''}" data-ipay="${k}">${l}</button>`).join('')}</div>
-    ${d.pay === 'deposit' ? nf('paid', 'چقدر بیعانه گرفتید؟', d.paid) : ''}
-    <details class="explain more" ${d.shipping || d.discount || d.note || d.customer.phone ? 'open' : ''}><summary>ارسال، تخفیف، تلفن یا یادداشت</summary>
-      ${nf('shipping', 'هزینهٔ ارسال', d.shipping, 'ندارد')}${nf('discount', 'تخفیف', d.discount, 'ندارد')}
-      <label class="field"><span class="lab">تلفن مشتری</span><span class="inp"><input data-itext="customer.phone" inputmode="tel" placeholder="اختیاری" value="${esc(d.customer.phone)}"></span></label>
-      <label class="field"><span class="lab">یادداشت روی فاکتور</span><span class="inp"><input data-itext="note" placeholder="مثلاً زمان تحویل" value="${esc(d.note)}"></span></label></details>
+  // What the app worked out by itself, so Servin can see it before typing anything.
+  if (d.items.length) {
+    h += `<div class="group calcbox">${d.items.map(it => `<div class="cell"><span class="c-main"><b>${esc(it.title)}</b><small>${esc(it.detail || '')}</small></span><span class="amt">${short(it.price)}</span></div>`).join('')}
+      <div class="cell"><span class="sec">جمع محصولات</span><b class="amt">${iso(fmt(t.subtotal))}</b></div></div>`;
+  }
+  h += `<p class="qn"><span class="n">۲</span>ارسال، تخفیف و دریافتی</p>
+    <div class="group">${nf('shipping', 'هزینهٔ ارسال', d.shipping, 'ندارد')}${nf('discount', 'تخفیف', d.discount, 'ندارد')}${nf('paid', 'دریافت‌شده', d.paid, 'هنوز هیچ')}</div>
+    ${t.total ? `<div class="chips quick"><button class="chip" data-ifull>همهٔ مبلغ را گرفتم</button></div>` : ''}
+    <details class="explain more" ${d.customer.name || d.customer.phone || d.note ? 'open' : ''}><summary>نام مشتری و یادداشت (اختیاری)</summary>
+      <div class="group">
+        <label class="cell"><span>نام</span><input class="bare txt" data-itext="customer.name" list="custs" placeholder="نام مشتری" value="${esc(d.customer.name)}"></label>
+        <label class="cell"><span>تلفن</span><input class="bare txt" data-itext="customer.phone" inputmode="tel" placeholder="اختیاری" value="${esc(d.customer.phone)}"></label>
+        <label class="cell"><span>یادداشت</span><input class="bare txt" data-itext="note" placeholder="مثلاً زمان تحویل" value="${esc(d.note)}"></label></div>
+      <datalist id="custs">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist></details>
     <div class="ed-foot inv-foot"><div class="inv-sum">${invSum(d)}</div>${S.inv.edit ? `<button class="btn ghost danger" data-idel>حذف</button>` : ''}<button class="btn" data-isave>ساخت فاکتور</button></div>`;
   panel.innerHTML = h;
 }
@@ -262,9 +265,6 @@ async function saveInvoice() {
   const d = S.inv.d, now = Date.now();
   // Say exactly what is missing, one thing at a time.
   if (!d.items.length) return island('یک محصول را از بالا انتخاب کنید');
-  if (!d.pay) return island('بگویید پول را گرفتید یا نه');
-  if (d.pay === 'deposit' && !d.paid) return island('مبلغ بیعانه را وارد کنید');
-  d.paid = paidOf(d);
   const t = totals(d);
   await db.put('invoices', d);
   const i = S.invoices.findIndex(x => x.id === d.id);
@@ -537,12 +537,7 @@ function bind() {
         if (i >= 0) d.items.splice(i, 1); else { const p = S.products.find(x => x.id === ds.itog); if (p) d.items.push(itemOf(p)); }
         return drawInvoice();
       }
-      if (ds.ipay) {
-        d.pay = ds.ipay;
-        // A deposit starts at half the total; Servin can change it.
-        if (d.pay === 'deposit' && !d.paid) d.paid = Math.round(totals({ ...d, paid: 0 }).total / 2 / 1e5) * 1e5 || null;
-        return drawInvoice();
-      }
+      if ('ifull' in ds) { d.paid = totals({ ...d, paid: 0 }).total; return drawInvoice(); }
       if ('isave' in ds) return saveInvoice();
       if ('idel' in ds) {
         if (!confirm('این فاکتور حذف شود؟ وضعیت محصولات تغییر نمی‌کند.')) return;
