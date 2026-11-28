@@ -17,6 +17,12 @@ const DEVICES = [
   ['laptop', { viewport: { width: 1440, height: 900 } }],
 ];
 
+// The site's own catalog follows the app (real products); these checks run on a fixed sample instead.
+const FIX = require('path').join(__dirname, '..', 'fixtures');
+const sample = async pg => {
+  await pg.route('**/site/data/catalog.json', r => r.fulfill({ path: FIX + '/site-sample-catalog.json' }));
+  await pg.route('**/site/img/sample/**', r => r.fulfill({ path: FIX + '/site-sample-img/' + r.request().url().split('/img/sample/')[1] }));
+};
 (async () => {
   const b = await chromium.launch();
   for (const [name, dev] of DEVICES) for (const scheme of name === 'iphone' || name === 'laptop' ? ['light', 'dark'] : ['light']) {
@@ -24,6 +30,7 @@ const DEVICES = [
     const ctx = await b.newContext({ ...dev, colorScheme: scheme, locale: 'fa-IR', deviceScaleFactor: 1 });
     const pg = await ctx.newPage();
     await pg.route('**/site/data/site.json', r => r.fulfill({ json: SITE }));
+    await sample(pg);
     pg.on('pageerror', e => errors.push(e.message)); pg.on('console', m => m.type() === 'error' && errors.push(m.text()));
     // Phones zoom a too-wide page out instead of scrolling, so compare with the device's real width, not innerWidth.
     const W = (dev.viewport || {}).width;
@@ -122,14 +129,14 @@ const DEVICES = [
 
     // catalog failure → friendly message with retry
     const ctx2 = await b.newContext({ ...dev, colorScheme: scheme });
-    const pg2 = await ctx2.newPage();
+    const pg2 = await ctx2.newPage(); await sample(pg2);
     await pg2.route('**/site/data/catalog.json', r => r.fulfill({ status: 500, body: '' }));
     await pg2.goto(BASE); await pg2.waitForSelector('[data-retry]');
     ok(true, `${tag}: catalog failure shows retry`); await ctx2.close();
 
     // Reduced motion: logo only fades, no movement; hover effects never run on touch screens.
     const ctx3 = await b.newContext({ ...dev, colorScheme: scheme, reducedMotion: 'reduce' });
-    const pg3 = await ctx3.newPage(); await pg3.goto(BASE); await pg3.waitForSelector('.brandmark');
+    const pg3 = await ctx3.newPage(); await sample(pg3); await pg3.goto(BASE); await pg3.waitForSelector('.brandmark');
     ok(await pg3.evaluate(() => getComputedStyle(document.querySelector('.brandmark')).animationName) === 'fade', `${tag}: reduced motion → logo fades only`);
     await ctx3.close();
 

@@ -110,7 +110,9 @@ assert.equal(shopHash({ cat: 'panel', sort: 'new', q: '' }), '#/shop?cat=panel')
 assert.equal(shopHash({}), '#/shop');
 
 // The catalog the site serves is valid, and holds only public fields (never cost, factors, stock counts or customers).
-const live = JSON.parse(readFileSync(new URL('../site/data/catalog.json', import.meta.url)));
+import { existsSync } from 'node:fs';
+const liveUrl = new URL('../site/data/catalog.json', import.meta.url);
+const live = JSON.parse(readFileSync(existsSync(liveUrl) ? liveUrl : new URL('./fixtures/site-sample-catalog.json', import.meta.url)));
 assert.ok(catalogOk(live) && live.app === 'seenzhin' && live.v === 1);
 assert.equal(normalize(live).length, live.items.length);
 const PUBLIC = ['id', 'title', 'desc', 'category', 'type', 'material', 'weight', 'price', 'availability', 'photos'];
