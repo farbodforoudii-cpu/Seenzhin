@@ -12,7 +12,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     pg.on('pageerror', e => errors.push(e.message)); pg.on('console', m => m.type() === 'error' && errors.push(m.text()));
     await pg.goto('http://localhost:8771/'); await pg.waitForTimeout(400);
     await pg.evaluate(async () => {
-      const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => r(q.result); });
+      const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 5); q.onsuccess = () => r(q.result); });
       const put = (s, o, k) => new Promise(r => { const t = db.transaction(s, 'readwrite'); k ? t.objectStore(s).put(o, k) : t.objectStore(s).put(o); t.oncomplete = r; });
       await put('kv', { prices: { silver: 150000 }, pricesAt: { silver: Date.now() }, suppliers: { silver: 'self', gold: 'self', bronze: 'workshop' },
         factors: { jewelry: { simple: 2.2, designed: 2.8, special: 3.5 }, panel: { special: 3 }, volume: {} }, markup: 2, rounding: 100000, brand: {} }, 'settings');
@@ -32,7 +32,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     await pg.evaluate(() => { const p = document.querySelector('#sheet .panel'); p.scrollTop = p.scrollHeight; }); await pg.waitForTimeout(150);
     await pg.screenshot({ path: OUT + scheme + '-site-switch.png' });
     await pg.click('[data-save]'); await pg.waitForTimeout(800);
-    const saved = await pg.evaluate(() => new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => { const g = q.result.transaction('products').objectStore('products').get('g1'); g.onsuccess = () => r(g.result); }; }));
+    const saved = await pg.evaluate(() => new Promise(r => { const q = indexedDB.open('seenzhin', 5); q.onsuccess = () => { const g = q.result.transaction('products').objectStore('products').get('g1'); g.onsuccess = () => r(g.result); }; }));
     ok(saved.onSite === true, scheme + ': saved on the product');
     await pg.click('[data-filter="site"]'); await pg.waitForTimeout(300);
     const cards = await pg.$$eval('.pcard', els => els.length);
@@ -40,7 +40,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     await pg.screenshot({ path: OUT + scheme + '-site-filter.png' });
     // Catalog file: only the marked product, only public fields, photo inside.
     await pg.evaluate(async () => {
-      const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => r(q.result); });
+      const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 5); q.onsuccess = () => r(q.result); });
       const c = document.createElement('canvas'); c.width = c.height = 40; c.getContext('2d').fillRect(0, 0, 40, 40);
       const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .8));
       await new Promise(r => { const t = db.transaction(['photos', 'products'], 'readwrite'); t.objectStore('photos').put({ id: 'phx', blob });
