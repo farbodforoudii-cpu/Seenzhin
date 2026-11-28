@@ -3,8 +3,8 @@
 اول `CLAUDE.md`، بعد `docs/DECISIONS.md` (بندهای ۱ تا ۱۶)، بعد این فایل. آنچه آنجا تصمیم شده دوباره پرسیده نشود.
 
 ## کجا هستیم
-- نسخهٔ **۲۶** روی شاخهٔ کار، منتظر «منتشر کن»: «خروجی کاتالوگ سایت» در تنظیمات (`exportCatalog`، `catalogFile` در `js/site.js`). قرارداد اپ و سایت: `docs/SITE-CONTRACT.md`. سایت در پروژهٔ دیگری ساخته می‌شود.
-- نسخهٔ ۲۵ (منتشرشده): کلید «روی سایت نشان بده» (بند ۲۰؛ `js/site.js`، `siteBox` در `js/app.js`).
+- نسخهٔ منتشرشده: **۲۶** روی `main` (۱۴۰۵/۰۹/۰۷): «خروجی کاتالوگ سایت» در تنظیمات (`exportCatalog`، `catalogFile` در `js/site.js`). قرارداد اپ و سایت: `docs/SITE-CONTRACT.md`. سایت در پروژهٔ دیگری ساخته می‌شود.
+- نسخهٔ ۲۵: کلید «روی سایت نشان بده» (بند ۲۰؛ `js/site.js`، `siteBox` در `js/app.js`).
 - نسخهٔ ۲۴ (همان روز): مشتری‌ها و سفارش سفارشی (بند ۱۸). منطق در `js/orders.js`؛ صفحه‌ها در `js/app.js` (بخش «customers and custom orders»).
 - نسخهٔ ۲۳ (همان روز): قیمت ویترین با فروش عوض نمی‌شود (بند ۱۶؛ `repairSold` محصولات فروخته‌شدهٔ قبلی را درست می‌کند) و موجودی هر طرح (بند ۱۷؛ `unitsOf` در `js/model.js`، `refreshUnits` / `unitsFor` / `stockBox` در `js/app.js`).
 - آدرس: https://farbodforoudii-cpu.github.io/Seenzhin/ (با S بزرگ؛ آدرس با s کوچک 404 می‌دهد).
