@@ -1,6 +1,6 @@
 // Offline-first service worker: app shell is cached; bump VERSION on every release.
 // Every app on this site shares one Cache Storage: each app only ever touches caches with its own prefix.
-const PREFIX = 'seenzhin-', VERSION = PREFIX + 'v25', LEGACY = ['v12'];
+const PREFIX = 'seenzhin-', VERSION = PREFIX + 'v26', LEGACY = ['v12'];
 const SHELL = [
   './', 'index.html', 'app.css', 'manifest.webmanifest',
   'js/app.js', 'js/model.js', 'js/analysis.js', 'js/invoice.js', 'js/db.js', 'js/format.js', 'js/sync.js', 'js/config.js', 'js/orders.js', 'js/site.js',
@@ -21,6 +21,8 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // Live market prices (hesab-man's feed) must never come from this app's cache.
   if (url.pathname.endsWith('/data/prices.json')) return;
+  // The public website (site/) is a separate product with its own caching; never serve it from the app's cache.
+  if (url.pathname.includes('/site/')) return;
   e.respondWith(caches.open(VERSION).then(async cache => {
     const hit = await cache.match(e.request, { ignoreSearch: true });
     const net = fetch(e.request).then(res => { if (res.ok) cache.put(e.request, res.clone()); return res; }).catch(() => hit);
