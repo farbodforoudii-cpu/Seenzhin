@@ -7,11 +7,12 @@ import { fmt, fmtDec, iso, parseNum, esc, faDigits, short, shortParts } from './
 import { insights, suggestInvoice, marketGap, shownPrice, jobsFor } from './analysis.js';
 import { totals, nextNumber, noFa, STATUS_NAME, renderInvoice } from './invoice.js';
 import { sync } from './sync.js';
+import { siteMissing } from './site.js';
 import { STAGES, STAGE_NAME, TERMS, isOpen, refundable, orderSettings, orderPrice, suggestDeposit, orderProfit, normPhone, customerId, findCustomer, customerStats, orderAlerts } from './orders.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
-const APP_VERSION = '۲۴';
+const APP_VERSION = '۲۵';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -260,7 +261,7 @@ function viewHome() {
   const stock = S.products.filter(p => U(p).status !== 'sold');
   const value = stock.reduce((a, p) => a + (shownPrice(p, S.settings) || 0) * (U(p).left + U(p).held), 0);
   const avail = stock.reduce((a, p) => a + U(p).left, 0), res = stock.reduce((a, p) => a + U(p).held, 0);
-  const list = S.products.filter(p => S.filter === 'all' || p.cat === S.filter);
+  const list = S.products.filter(p => S.filter === 'all' || (S.filter === 'site' ? p.onSite : p.cat === S.filter));
   const T = todo();
   const sp = shortParts(value);
   let h = `<div class="brand-top"><img class="brand-logo" src="brand/logo-sun.png" alt="سینژین"></div>` + head('ویترین', 'سینژین', `<button class="add-pill" data-new>${svg('plus')}<span>محصول</span></button>`);
@@ -270,7 +271,8 @@ function viewHome() {
   h += jobCard();
   if (T.length) h += `<div class="stitle">کارهای امروز</div><div class="group enter">${T.map(line).join('')}</div>`;
   if (S.products.length) {
-    const cats = [{ id: 'all', name: 'همه' }, ...CATEGORIES.filter(c => S.products.some(p => p.cat === c.id))];
+    const onSite = S.products.filter(p => p.onSite).length;
+    const cats = [{ id: 'all', name: 'همه' }, ...CATEGORIES.filter(c => S.products.some(p => p.cat === c.id)), ...(onSite ? [{ id: 'site', name: `روی سایت ${faDigits(onSite)}` }] : [])];
     if (cats.length > 2) h += `<div class="chips scroll">${cats.map(c => `<button class="chip ${S.filter === c.id ? 'on' : ''}" data-filter="${c.id}">${c.name}</button>`).join('')}</div>`;
     else h += `<div class="stitle">محصولات</div>`;
     h += `<div class="grid">${list.map(card).join('')}</div>`;
@@ -807,7 +809,7 @@ function viewSettings() {
 
 // ---------- product editor: one question per screen ----------
 const STEPS = ['چه محصولی؟', 'سطح کار', 'هزینه‌ها', 'عکس و نام'];
-const blank = () => ({ desc: '', cat: null, sub: null, level: null, title: '', material: null, weight: null, stone: null, invoice: null, w: null, h: null, status: 'available', note: '', photos: [], _added: [] });
+const blank = () => ({ desc: '', cat: null, sub: null, level: null, title: '', material: null, weight: null, stone: null, invoice: null, w: null, h: null, status: 'available', onSite: false, note: '', photos: [], _added: [] });
 
 function openSheet(html) {
   const sh = $('#sheet');
@@ -826,6 +828,13 @@ function stockBox(d) {
   return `<div class="stitle">موجودی</div><div class="group"><div class="cell"><span>آماده برای فروش</span>
     <span class="qty"><button class="pill" data-qty="-1" aria-label="یکی کمتر">−</button><b>${faDigits(d._ready)}</b><button class="pill" data-qty="1" aria-label="یکی بیشتر">+</button></span></div></div>
     <p class="foot">${say(`با هر فاکتور تسویه‌شده یکی کم می‌شود؛ فاکتور بیعانه یکی را رزرو می‌کند.${facts ? ' ' + facts + '.' : ''} اگر دوباره ساختید، اینجا اضافه کنید.`)}</p>`;
+}
+// «روی سایت نشان بده»: only these products go to the Seenzhin website, with public fields only (js/site.js).
+function siteBox(d) {
+  const miss = d.onSite ? siteMissing(d, S.settings) : [];
+  return `<div class="stitle">سایت</div><div class="group"><button class="cell" data-onsite role="switch" aria-checked="${d.onSite ? 'true' : 'false'}">
+    <span class="c-main"><b>روی سایت نشان بده</b><small>${d.onSite ? 'در کاتالوگ سایت سینژین دیده می‌شود' : 'فعلاً فقط داخل اپ'}</small></span><i class="sw ${d.onSite ? 'on' : ''}"></i></button></div>
+    <p class="foot">${miss.length ? say(`برای سایت کم دارد: ${miss.join('، ')}.`) : 'روی سایت فقط نام، عکس، توضیح کوتاه، نوع، فلز، وزن، قیمت و «موجود یا سفارشی» دیده می‌شود؛ هزینه‌ها هرگز.'}</p>`;
 }
 function openEditor(p, step) {
   const d = p ? Object.assign(blank(), JSON.parse(JSON.stringify(p)), { _added: [] }) : blank();
@@ -998,6 +1007,7 @@ function summary(d, r) {
   h += `<div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}</div>`;
   if (S.ed.order) return h + `<div class="ed-foot"><button class="btn" data-save>${S.ed.then === 'ready' ? 'ثبت وزن واقعی' : 'ذخیره در سفارش'}</button></div>`;
   h += stockBox(d);
+  h += siteBox(d);
   h += `<div class="ed-foot">${S.ed.edit ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>مشابه</button>${d._ready > 0 && r.complete ? `<button class="btn ghost" data-sell="${d.id}">فاکتور</button>` : ''}` : ''}<button class="btn" data-save>${S.ed.edit ? 'ذخیره' : 'ذخیره در ویترین'}</button></div>`;
   return h;
 }
@@ -1050,6 +1060,7 @@ async function save() {
     if ((prev.approved && prev.approved.price) !== (p.approved && p.approved.price)) ch.push(p.approved ? `قیمت ${plain(p.approved.price)} تومان` : 'قیمت ناقص');
     if (was && _ready !== was.left) ch.push(`آماده ${faDigits(_ready)} عدد`);
     if (prev.invoice !== p.invoice && p.invoice != null) ch.push(`فاکتور کارگاه ${plain(p.invoice)}`);
+    if (!!prev.onSite !== !!p.onSite) ch.push(p.onSite ? 'روی سایت' : 'از سایت برداشته شد');
     logEvent(`محصول «${nm}» را ویرایش کرد${ch.length ? '؛ ' + ch.join('، ') : ''}`);
   }
   // A new product's undo removes it again.
@@ -1229,6 +1240,7 @@ function bind() {
     if (ds.step != null) { S.ed.step = Number(ds.step); drawEditor(); $('#sheet .panel').scrollTop = 0; return; }
     if (ds.usesug) { d.invoice = Number(ds.usesug); return drawEditor(); }
     if ('clearfinal' in ds) { d.finalPrice = null; return drawEditor(); }
+    if ('onsite' in ds) { d.onSite = !d.onSite; return drawEditor(); }
     if (ds.qty) { d._ready = Math.max(0, d._ready + Number(ds.qty)); return drawEditor(); }
     if (ds.usecalc) { d.invoice = Number(ds.usecalc); return drawEditor(); }
     if (ds.fixinv) { d.invoice = d.invoice * Number(ds.fixinv); return drawEditor(); }

@@ -374,3 +374,9 @@ a.chip { text-decoration: none; color: inherit; }
 .stats > div + div { border-inline-start: 1px solid var(--sep); padding-inline-start: 14px; }
 .stats small { color: var(--sec); font-size: 12.5px; }
 .stats b { font-size: 19px; }
+/* iOS-like switch */
+.sw { flex: none; position: relative; width: 50px; height: 30px; border-radius: 999px; background: var(--sep); transition: background .2s; }
+.sw::after { content: ''; position: absolute; top: 3px; inset-inline-start: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .25); transition: inset-inline-start .2s; }
+.sw.on { background: var(--g); }
+.sw.on::after { inset-inline-start: 23px; }
+@media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
