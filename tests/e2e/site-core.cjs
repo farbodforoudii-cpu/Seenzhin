@@ -11,6 +11,8 @@ const SITE = { instagram: 'example_brand', whatsapp: '09120000000', telegram: ''
 const DEVICES = [
   ['iphone', { ...devices['iPhone 14'] }],
   ['android', { ...devices['Pixel 7'] }],
+  ['android-small', { ...devices['Galaxy S8'] }],          // 360 px, the most common narrow Android width
+  ['iphone-se', { ...devices['iPhone SE'] }],              // 320 px, the narrowest supported
   ['ipad', { ...devices['iPad Pro 11'] }],
   ['laptop', { viewport: { width: 1440, height: 900 } }],
 ];
@@ -23,7 +25,10 @@ const DEVICES = [
     const pg = await ctx.newPage();
     await pg.route('**/site/data/site.json', r => r.fulfill({ json: SITE }));
     pg.on('pageerror', e => errors.push(e.message)); pg.on('console', m => m.type() === 'error' && errors.push(m.text()));
-    const noOverflow = async page => ok(await pg.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${tag} ${page}: no horizontal scroll`);
+    // Phones zoom a too-wide page out instead of scrolling, so compare with the device's real width, not innerWidth.
+    const W = (dev.viewport || {}).width;
+    const noOverflow = async page => { const [sw, iw] = await pg.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+      ok(sw <= W + 1 && iw <= W + 1, `${tag} ${page}: no horizontal scroll (page ${sw}, window ${iw}, device ${W})`); };
     const shot = async page => pg.screenshot({ path: `${OUT}${tag}-${page}.png`, fullPage: true });
 
     await pg.goto(BASE); await pg.waitForSelector('.card');
@@ -31,7 +36,7 @@ const DEVICES = [
     await noOverflow('home'); await shot('home');
 
     // phone menu
-    if (name === 'iphone' || name === 'android') {
+    if (/iphone|android/.test(name)) {
       await pg.click('#menuBtn'); await pg.waitForTimeout(250);
       ok(await pg.isVisible('#nav a[href="#/custom"]'), `${tag}: phone menu opens`);
       await pg.screenshot({ path: `${OUT}${tag}-menu.png` });
