@@ -380,3 +380,9 @@ a.chip { text-decoration: none; color: inherit; }
 .sw.on { background: var(--g); }
 .sw.on::after { inset-inline-start: 23px; }
 @media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
+/* money: month switcher */
+.monthbar { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 14px; }
+.monthbar b { font-size: 17px; }
+.monthbar .icon-btn:disabled { opacity: .3; }
+.hero-n.neg b { color: var(--r); }
+.cell .c-main > span { font-size: 15.5px; }

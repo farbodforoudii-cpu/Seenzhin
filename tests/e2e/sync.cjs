@@ -50,7 +50,7 @@ const USER = 'zz-test-' + Date.now().toString(36), PASS = 'test-pass-123';
   const seeCust = async () => { await A.p.click('[data-tab="settings"]'); await A.p.click('[data-syncnow]'); await A.p.waitForTimeout(4000); await A.p.click('[data-tab="sales"]'); await A.p.click('[data-sv="cust"]'); await A.p.waitForTimeout(300); return A.p.locator('.cell', { hasText: 'مشتری آزمون همگام' }).count(); };
   console.log('A sees customer:', await seeCust());
   // a phone that ran the old version had skipped customers: after the update it reads them again
-  await A.p.evaluate(async () => { const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => r(q.result); });
+  await A.p.evaluate(async () => { const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 5); q.onsuccess = () => r(q.result); });
     await new Promise(r => { const t = db.transaction(['customers', 'kv'], 'readwrite'); t.objectStore('customers').clear(); t.objectStore('kv').put(1, 'syncKinds'); t.oncomplete = r; }); });
   await A.p.reload(); await A.p.waitForTimeout(1500);
   console.log('old phone recovers customer:', await seeCust());

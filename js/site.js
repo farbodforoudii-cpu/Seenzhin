@@ -27,3 +27,12 @@ export function siteCatalog(products, st, unitsOf) {
     };
   });
 }
+
+// The file the website reads (v1). Photos travel inside it as data URLs until the site has a live server.
+export const CATALOG_VERSION = 1;
+export function catalogFile(items, photoData, now = new Date()) {
+  return {
+    app: 'seenzhin', kind: 'catalog', v: CATALOG_VERSION, at: now.toISOString(), currency: 'IRT',
+    items: items.map(it => ({ ...it, photos: it.photos.filter(id => photoData[id]).map(id => ({ id, data: photoData[id] })) })),
+  };
+}

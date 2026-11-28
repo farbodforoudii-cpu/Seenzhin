@@ -13,7 +13,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   pg.on('dialog', d => d.accept());
   await pg.goto('http://localhost:8771/'); await pg.waitForTimeout(400);
   await pg.evaluate(async () => {
-    const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => r(q.result); });
+    const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 5); q.onsuccess = () => r(q.result); });
     const put = (s, o, k) => new Promise(r => { const t = db.transaction(s, 'readwrite'); k ? t.objectStore(s).put(o, k) : t.objectStore(s).put(o); t.oncomplete = r; });
     await put('kv', { prices: { silver: 150000, gold: null }, pricesAt: { silver: Date.now() }, suppliers: { silver: 'self', gold: 'self', bronze: 'workshop' },
       factors: { jewelry: { simple: 2.2, designed: 2.8, special: 3.5 }, panel: {}, volume: {} }, markup: 2, rounding: 100000, brand: {} }, 'settings');
@@ -21,7 +21,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     await put('invoices', { id: 'old1', no: '1405-001', date: Date.now() - 5 * 864e5, paidAt: Date.now() - 5 * 864e5, items: [{ title: 'گوشواره', price: 2000000 }], paid: 2000000, customer: { name: 'مینا آزمایشی', phone: '۰۹۱۲۰۰۰۰۰۰۰' }, note: '' });
   });
   await pg.reload(); await pg.waitForTimeout(1200);
-  const read = st => pg.evaluate(st => new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => { const g = q.result.transaction(st).objectStore(st).getAll(); g.onsuccess = () => r(g.result); }; }), st);
+  const read = st => pg.evaluate(st => new Promise(r => { const q = indexedDB.open('seenzhin', 5); q.onsuccess = () => { const g = q.result.transaction(st).objectStore(st).getAll(); g.onsuccess = () => r(g.result); }; }), st);
   let cs = await read('customers');
   ok(cs.length === 1 && cs[0].name === 'مینا آزمایشی', 'old buyer became a customer');
   ok((await read('invoices'))[0].customerId === cs[0].id, 'old invoice linked to the customer');
@@ -60,7 +60,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
 
   // Silver gets dearer: the order keeps its locked price.
   await pg.evaluate(async () => {
-    const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => r(q.result); });
+    const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 5); q.onsuccess = () => r(q.result); });
     const st = await new Promise(r => { const g = db.transaction('kv').objectStore('kv').get('settings'); g.onsuccess = () => r(g.result); });
     st.prices.silver = 200000;
     await new Promise(r => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(st, 'settings'); t.oncomplete = r; });

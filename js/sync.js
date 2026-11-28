@@ -42,9 +42,9 @@ async function fingerprint(key) {
 const recId = (kind, key) => `s:${kind}:${key}`;
 // Record kind → IndexedDB store. A kind this version does not know is left on the server, untouched and unread,
 // so the next version still finds it.
-const STORE = { product: 'products', invoice: 'invoices', photo: 'photos', log: 'log', customer: 'customers', order: 'orders' };
+const STORE = { product: 'products', invoice: 'invoices', photo: 'photos', log: 'log', customer: 'customers', order: 'orders', expense: 'expenses' };
 // Raised when a version learns new kinds: such phones read the whole account once more.
-const KINDS_V = 2;
+const KINDS_V = 3;
 const saveMeta = () => raw.set('syncMeta', S.meta);
 
 function track(kind, ids, deleted) {
@@ -121,6 +121,7 @@ async function seed() {
   for (const l of await db.all('log')) mark(recId('log', l.id));
   for (const c of await db.all('customers')) mark(recId('customer', c.id));
   for (const o of await db.all('orders')) mark(recId('order', o.id));
+  for (const e of await db.all('expenses')) mark(recId('expense', e.id));
   for (const p of await db.all('photos')) mark(recId('photo', p.id));
   for (const k of ['settings', 'logo']) if ((await db.get(k)) != null) mark(recId('kv', k));
   await saveMeta();
@@ -140,7 +141,7 @@ export const sync = {
     // An older version skipped kinds it did not know (customers, orders): read everything once more.
     if (S.key && ((await db.get('syncKinds')) || 1) < KINDS_V) {
       S.cursor = null;
-      for (const r of Object.keys(S.meta.at)) if (/^s:(customer|order):/.test(r) && !S.meta.dirty[r]) delete S.meta.at[r];
+      for (const r of Object.keys(S.meta.at)) if (/^s:(customer|order|expense):/.test(r) && !S.meta.dirty[r]) delete S.meta.at[r];
       await raw.set('syncCursor', null); await saveMeta();
     }
     await raw.set('syncKinds', KINDS_V);

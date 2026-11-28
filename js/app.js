@@ -7,12 +7,13 @@ import { fmt, fmtDec, iso, parseNum, esc, faDigits, short, shortParts } from './
 import { insights, suggestInvoice, marketGap, shownPrice, jobsFor } from './analysis.js';
 import { totals, nextNumber, noFa, STATUS_NAME, renderInvoice } from './invoice.js';
 import { sync } from './sync.js';
-import { siteMissing } from './site.js';
+import { siteMissing, siteCatalog, catalogFile } from './site.js';
+import { EXP, expOf, monthKey, monthName, shiftMonth, monthReport, metalBought, recurringDue } from './money.js';
 import { STAGES, STAGE_NAME, TERMS, isOpen, refundable, orderSettings, orderPrice, suggestDeposit, orderProfit, normPhone, customerId, findCustomer, customerStats, orderAlerts } from './orders.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
-const APP_VERSION = '۲۵';
+const APP_VERSION = '۲۷';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -31,6 +32,7 @@ const ICON = {
   back: '<path d="M9 6l6 6-6 6"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
   sales: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  money: '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2"/>',
 };
 const svg = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
 
@@ -47,10 +49,11 @@ const timeFa = ts => { const d = new Date(ts); return new Intl.DateTimeFormat('f
 
 // ---------- undo: every change that matters can be taken back for a few seconds ----------
 // snap() copies the records an action is about to change; the returned function puts them back exactly.
-async function snap({ products = [], invoices = [], photos = [], settings = false, customers = [], orders = [] }) {
-  const keep = { p: [], i: [], ph: [], c: [], o: [], st: settings ? JSON.parse(JSON.stringify(S.settings)) : null };
+async function snap({ products = [], invoices = [], photos = [], settings = false, customers = [], orders = [], expenses = [] }) {
+  const keep = { p: [], i: [], ph: [], c: [], o: [], x: [], st: settings ? JSON.parse(JSON.stringify(S.settings)) : null };
   for (const id of customers) keep.c.push([id, await db.getOne('customers', id)]);
   for (const id of orders) keep.o.push([id, await db.getOne('orders', id)]);
+  for (const id of expenses) keep.x.push([id, await db.getOne('expenses', id)]);
   for (const id of products) keep.p.push([id, await db.getOne('products', id)]);
   for (const id of invoices) keep.i.push([id, await db.getOne('invoices', id)]);
   for (const id of photos) keep.ph.push([id, await db.getOne('photos', id)]);
@@ -60,6 +63,7 @@ async function snap({ products = [], invoices = [], photos = [], settings = fals
     for (const [id, v] of keep.i) v ? await db.put('invoices', v) : await db.del('invoices', id);
     for (const [id, v] of keep.c) v ? await db.put('customers', { ...v, updatedAt: Date.now() }) : await db.del('customers', id);
     for (const [id, v] of keep.o) v ? await db.put('orders', { ...v, updatedAt: Date.now() }) : await db.del('orders', id);
+    for (const [id, v] of keep.x) v ? await db.put('expenses', { ...v, updatedAt: Date.now() }) : await db.del('expenses', id);
     if ((keep.o.length || keep.c.length) && $('#sheet').classList.contains('open') && (S.ord || S.cust)) { S.ord = null; S.cust = null; closeSheet(); }
     if (keep.st) { S.settings = keep.st; await saveSettings(); }
     await load(); render();
@@ -79,7 +83,7 @@ function goBack() {
     if (S.ed && S.ed.step > 0 && S.ed.step < 4) { S.ed.step--; drawEditor(); $('#sheet .panel').scrollTop = 0; return; }
     S.inv = null; S.preview = null;
     if (S.ed) return closeEditor();
-    const wasOrd = S.ord || S.cust; S.ord = null; S.cust = null;
+    const wasOrd = S.ord || S.cust || S.exp; S.ord = null; S.cust = null; S.exp = null;
     closeSheet(); if (wasOrd) render(); return;
   }
   const prev = (S.tabs || []).pop();
@@ -105,6 +109,7 @@ async function load() {
   S.invoices = (await db.all('invoices')).sort((a, b) => b.date - a.date);
   S.customers = (await db.all('customers')).sort((a, b) => b.createdAt - a.createdAt);
   S.orders = (await db.all('orders')).sort((a, b) => b.createdAt - a.createdAt);
+  S.expenses = (await db.all('expenses')).sort((a, b) => b.date - a.date);
   const lg = await db.get('logo');
   S.logo = lg ? URL.createObjectURL(lg) : null;
   S.log = (await db.all('log')).sort((a, b) => b.at - a.at).slice(0, 300);
@@ -179,11 +184,11 @@ async function loadMarket() {
 }
 
 // ---------- shell ----------
-const TABS = [['home', 'ویترین'], ['sales', 'فروش'], ['analysis', 'تحلیل'], ['settings', 'تنظیمات']];
+const TABS = [['home', 'ویترین'], ['sales', 'فروش'], ['money', 'مالی'], ['analysis', 'تحلیل'], ['settings', 'تنظیمات']];
 function render() {
   $('#tabs').innerHTML = `<div class="inner">${TABS.map(([id, n]) => `<button class="${S.tab === id ? 'on' : ''}" data-tab="${id}">${svg(id)}<span>${n}</span></button>`).join('')}</div>`;
   const v = $('#view');
-  v.innerHTML = S.tab === 'home' ? viewHome() : S.tab === 'sales' ? viewSales() : S.tab === 'analysis' ? viewAnalysis() : viewSettings();
+  v.innerHTML = S.tab === 'home' ? viewHome() : S.tab === 'sales' ? viewSales() : S.tab === 'money' ? viewMoney() : S.tab === 'analysis' ? viewAnalysis() : viewSettings();
   v.querySelectorAll('.enter').forEach((el, i) => el.style.setProperty('--i', Math.min(i, 10)));
   v.querySelectorAll('[data-count]').forEach(countUp);
 }
@@ -434,6 +439,8 @@ async function saveInvoice() {
   const undo = await snap({ invoices: [d.id], products: d.items.map(it => it.productId).filter(Boolean) });
   // When it was paid in full: sales and ready counts are worked out from this.
   if (t.status === 'paid') d.paidAt = d.paidAt || now; else delete d.paidAt;
+  // Making cost frozen at the moment of sale, so later metal prices never rewrite a month's profit.
+  if (t.status === 'paid') for (const it of d.items) if (it.cost == null) it.cost = costOf(it, d);
   // The buyer is a customer (found by phone, then name, or made new).
   const c = await linkCustomer(d.customer.name, d.customer.phone);
   d.customerId = c ? c.id : null;
@@ -728,13 +735,110 @@ async function cancelOrder() {
   if (inv && back) { await db.del('invoices', inv.id); S.invoices = S.invoices.filter(i => i.id !== inv.id); o.invoiceId = null; o.refunded = paid; }
   else if (inv) {
     // Kept deposit: the invoice becomes a settled sale of exactly that amount.
-    inv.items[0].price = paid; inv.items[0].title = `${orderTitle(o)} (لغو بعد از شروع ساخت)`; inv.discount = null; inv.shipping = null; inv.terms = null; inv.paidAt = now;
+    o.spentCost = orderPrice(o, S.settings).cost ?? null;
+    inv.items[0].price = paid; inv.items[0].cost = o.spentCost; inv.items[0].title = `${orderTitle(o)} (لغو بعد از شروع ساخت)`; inv.discount = null; inv.shipping = null; inv.terms = null; inv.paidAt = now;
     await putInvoice(inv);
     o.spentCost = orderPrice(o, S.settings).cost ?? null;
   }
   o.stage = 'cancelled'; o.cancelledAt = now;
   await commitOrder(back ? `لغو شد؛ ${plain(paid)} تومان بیعانه برگشت` : 'لغو شد؛ بیعانه نگه داشته شد');
   drawOrder(); offerUndo('سفارش لغو شد', undo);
+}
+
+// ---------- money: what came in, what went out, what stayed (per Jalali month) ----------
+// Making cost of a sold item: frozen on the invoice when it was settled; older ones fall back to today's formula.
+function costOf(it, inv) {
+  if (it.cost != null) return it.cost;
+  if (it.productId) { const p = S.products.find(x => x.id === it.productId); return p ? price(p, S.settings).cost : null; }
+  if (inv.orderId) { const o = S.orders.find(x => x.id === inv.orderId); return o ? (o.stage === 'cancelled' ? o.spentCost ?? null : orderPrice(o, S.settings).cost) : null; }
+  return null;
+}
+async function putExpense(e) {
+  e.updatedAt = Date.now(); e.createdAt ||= e.updatedAt;
+  await db.put('expenses', e);
+  const i = S.expenses.findIndex(x => x.id === e.id);
+  if (i >= 0) S.expenses[i] = e; else S.expenses.unshift(e);
+  S.expenses.sort((a, b) => b.date - a.date);
+}
+function viewMoney() {
+  const key = S.month || monthKey(Date.now()), R = monthReport(key, S.invoices, S.expenses, costOf);
+  let h = head('مالی', 'هزینه، فروش و سود', `<button class="add-pill" data-xnew>${svg('plus')}<span>هزینه</span></button>`);
+  const isNow = key === monthKey(Date.now());
+  h += `<div class="monthbar enter"><button class="icon-btn" data-month="-1" aria-label="ماه قبل">${svg('back')}</button><b>${say(monthName(key))}</b>
+    <button class="icon-btn" data-month="1" aria-label="ماه بعد" ${isNow ? 'disabled' : ''}>${svg('chev')}</button></div>`;
+  const sp = shortParts(Math.abs(R.net));
+  h += `<section class="hero enter"><span class="hero-k">${R.net < 0 ? 'زیان این ماه' : 'سود این ماه'}</span>
+    ${R.revenue || R.cashOut ? `<div class="hero-n ${R.net < 0 ? 'neg' : ''}"><b data-count="${Math.abs(R.net)}">${sp.num}</b><small>${sp.unit}</small></div>` : '<div class="hero-n empty"><b>هنوز چیزی ثبت نشده</b></div>'}
+    <span class="hero-s">${say('سود = فروش تسویه‌شده − هزینهٔ ساخت همان قطعه‌ها − هزینه‌های فروش و ثابت ماه.')}</span></section>`;
+  // Monthly costs from last month, one tap each (never added by themselves).
+  const due = isNow ? recurringDue(S.expenses, key) : [];
+  if (due.length) h += `<div class="stitle">هزینه‌های ماهانه</div><div class="group enter">${due.map(e => `<button class="cell todo o" data-xrepeat="${e.id}"><i class="dot"></i><span class="c-main"><b>${esc(expOf(e.cat).name)}${e.note ? '، ' + esc(e.note) : ''} این ماه</b><small>${say(`ماه قبل ${plain(e.amount)} تومان`)}</small></span><span class="pill">ثبت کن</span></button>`).join('')}</div>`;
+  const row = (k, v, sub = '', cls = '') => `<div class="cell"><span class="c-main"><span>${k}</span>${sub ? `<small>${say(sub)}</small>` : ''}</span><b class="amt ${cls}">${v == null ? '—' : iso(fmt(v))}</b></div>`;
+  h += `<div class="stitle">سود و زیان</div><div class="group enter">
+    ${row('فروش تسویه‌شده', R.revenue, `${R.sales.length} فاکتور، با هزینهٔ ارسال گرفته‌شده`)}
+    ${row('− هزینهٔ ساخت قطعه‌های فروخته', R.cogs, R.unknown ? `${R.unknown} قلم هزینهٔ ساخت ندارد (قلم دستی)؛ حساب نشد` : 'فلز، سنگ، کار تیم و کارگاه، از روز فروش')}
+    ${row('= سود ناخالص', R.gross)}
+    ${row('− فروش و بازاریابی', R.by.sell, 'بسته‌بندی، ارسال، تبلیغات و عکاسی')}
+    ${row('− ثابت و سایر', R.by.fixed, 'اجاره، قبض، سایر')}
+    ${row(R.net < 0 ? '= زیان' : '= سود', Math.abs(R.net), '', R.net < 0 ? 'warn' : 'ok')}</div>`;
+  h += `<div class="stitle">جریان پول</div><div class="group enter">
+    ${row('آمد', R.cashIn, 'فروش‌های تسویه‌شدهٔ این ماه')}
+    ${row('رفت', R.cashOut, `ساخت ${plain(R.by.make)}، فروش ${plain(R.by.sell)}، ثابت ${plain(R.by.fixed)}`)}
+    ${row(R.cash < 0 ? 'بیشتر خرج شد' : 'ماند', Math.abs(R.cash), '', R.cash < 0 ? 'warn' : 'ok')}
+    ${R.held ? row('بیعانهٔ در دست', R.held, 'هنوز فروش حساب نمی‌شود؛ با تسویه می‌آید') : ''}</div>
+    <p class="foot">${say('خرید فلز، رسید کارگاه و دستمزد در «رفت» هستند؛ در سود فقط از راه هزینهٔ ساخت قطعه‌ای که فروخته شد می‌آیند تا دو بار شمرده نشوند.')}</p>`;
+  const sv = metalBought(S.expenses, 'silver');
+  if (sv.n) {
+    const today = S.settings.prices.silver;
+    h += `<div class="stitle">نقرهٔ خریده‌شده</div><div class="group enter">${row('جمع خرید', sv.grams, `${sv.n} خرید؛ گرم`)}
+      ${row('میانگین هر گرم', Math.round(sv.avg), today ? `قیمت ثبت‌شدهٔ امروز ${plain(today)} تومان؛ ${today > sv.avg ? 'نقره گران‌تر شده' : 'نقره ارزان‌تر شده'}` : '')}</div>`;
+  }
+  h += `<div class="stitle">هزینه‌های ${say(monthName(key))}</div>`;
+  h += R.expenses.length ? `<div class="group enter">${R.expenses.map(e => `<button class="cell" data-xview="${e.id}"><span class="c-main"><b>${esc(expOf(e.cat).name)}</b><small>${say([dayFa(e.date), e.grams ? `${e.grams} گرم ${e.metal === 'gold' ? 'طلا' : 'نقره'}` : '', e.note || ''].filter(Boolean).join('، '))}</small></span><span class="amt">${short(e.amount)}</span></button>`).join('')}</div>`
+    : `<div class="empty enter"><p>هر خرجی که شد، همین‌جا با یک لمس ثبت کنید؛ سود ماه خودش حساب می‌شود.</p><button class="btn" data-xnew>ثبت اولین هزینه</button></div>`;
+  return h;
+}
+function openExpense(e) {
+  const blankX = { id: uid(), cat: null, amount: null, date: Date.now(), note: '', monthly: false, metal: 'silver', grams: null };
+  S.exp = { d: e ? JSON.parse(JSON.stringify(e)) : blankX, edit: !!e };
+  openSheet(''); drawExpense();
+}
+function drawExpense() {
+  const { d, edit } = S.exp, c = d.cat && expOf(d.cat);
+  const dd = Math.round((new Date().setHours(12, 0, 0, 0) - new Date(d.date).setHours(12, 0, 0, 0)) / 864e5);
+  let h = `<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button><span class="sec">${edit ? 'ویرایش هزینه' : 'هزینهٔ تازه'}</span></div>
+    <h2 class="q">برای چه؟</h2><div class="chips wrap">${EXP.map(x => `<button class="chip ${d.cat === x.id ? 'on' : ''}" data-xcat="${x.id}">${x.name}</button>`).join('')}</div>`;
+  if (c) {
+    h += `<div class="group">`;
+    if (d.cat === 'metal') h += `<div class="cell"><span>فلز</span><span class="chips"><button class="chip ${d.metal === 'silver' ? 'on' : ''}" data-xmetal="silver">نقره</button><button class="chip ${d.metal === 'gold' ? 'on' : ''}" data-xmetal="gold">طلا</button></span></div>
+      <label class="cell"><span>وزن</span><input class="bare" data-xnum="grams" data-dec="1" inputmode="decimal" placeholder="—" value="${d.grams == null ? '' : fmtDec(d.grams)}"><em class="u">گرم</em></label>`;
+    h += `<label class="cell"><span>مبلغ</span><input class="bare amt-in" data-xnum="amount" inputmode="numeric" placeholder="تومان" value="${d.amount == null ? '' : fmt(d.amount)}"><em class="u">تومان</em></label>
+      <label class="cell"><span>یادداشت</span><input class="bare txt" data-xtext="note" placeholder="${d.cat === 'workshop' ? 'مثلاً ریخته‌گری ۶ قطعه' : 'اختیاری'}" value="${esc(d.note || '')}"></label></div>`;
+    h += `<p class="foot" id="xhint">${xHint(d)}</p>`;
+    h += `<p class="lab2">کی؟</p><div class="chips"><button class="chip ${dd === 0 ? 'on' : ''}" data-xday="0">امروز</button><button class="chip ${dd === 1 ? 'on' : ''}" data-xday="1">دیروز</button><button class="chip ${dd === 2 ? 'on' : ''}" data-xday="2">پریروز</button>${dd > 2 ? `<span class="sec">${say(dayFa(d.date))}</span>` : ''}</div>`;
+    if (c.group !== 'make' || d.cat === 'wages') h += `<div class="group"><button class="cell" data-xmonthly role="switch" aria-checked="${d.monthly ? 'true' : 'false'}"><span class="c-main"><b>هر ماه تکرار می‌شود</b><small>ماه بعد با یک لمس دوباره ثبت می‌شود</small></span><i class="sw ${d.monthly ? 'on' : ''}"></i></button></div>`;
+  }
+  h += `<div class="ed-foot">${edit ? '<button class="btn ghost danger" data-xdel>حذف</button>' : ''}<button class="btn" data-xsave ${c ? '' : 'disabled'}>ذخیره</button></div>`;
+  $('#sheet .panel').innerHTML = h;
+}
+// Under the amount: price per gram for metal (and how it compares with today's price), zeros check otherwise.
+function xHint(d) {
+  if (d.amount != null && d.amount > 0 && d.amount < 10000) return say(`${fmt(d.amount)} تومان خیلی کم است؛ شاید صفرها جا افتاده.`);
+  if (d.cat === 'metal' && d.amount && d.grams) {
+    const per = Math.round(d.amount / d.grams), today = S.settings.prices[d.metal];
+    return say(`هر گرم ${plain(per)} تومان${today ? `؛ قیمت ثبت‌شده در تنظیمات ${plain(today)}` : ''}.`);
+  }
+  return d.cat === 'metal' ? 'مبلغ و وزن را بنویسید؛ قیمت هر گرم حساب می‌شود.' : '';
+}
+async function saveExpense() {
+  const { d, edit } = S.exp;
+  if (!d.amount) return island('مبلغ را بنویسید');
+  if (d.cat === 'metal' && !d.grams) return island('وزن فلز را بنویسید');
+  if (d.cat !== 'metal') { delete d.grams; delete d.metal; }
+  const undo = await snap({ expenses: [d.id] });
+  await putExpense(d);
+  logEvent(`${edit ? 'هزینه را ویرایش کرد' : 'هزینه ثبت کرد'}: ${expOf(d.cat).name}، ${plain(d.amount)} تومان${d.note ? ` (${d.note})` : ''}`);
+  S.exp = null; closeSheet(); S.month = monthKey(d.date); render(); offerUndo('هزینه ثبت شد', undo);
 }
 
 // ---------- settings: grouped like iOS settings ----------
@@ -800,6 +904,10 @@ function viewSettings() {
   h += `<div class="stitle">روی فاکتور</div><div class="group enter">
     ${['instagram:اینستاگرام:seenzhin', 'phone:تلفن:۰۹۱۲…', 'thanks:پیام پایانی:از انتخاب شما سپاسگزاریم', 'care:نکتهٔ نگهداری:دور از رطوبت و عطر نگه دارید'].map(x => { const [k, l, ph] = x.split(':'); return `<label class="cell"><span>${l}</span><input class="bare txt" data-brand="${k}" placeholder="${ph}" value="${esc(B[k] || '')}"></label>`; }).join('')}
   </div><p class="foot">روی هر فاکتور چاپ می‌شوند؛ لوگوی رسمی سینژین همیشه بالای فاکتور است.</p>`;
+  const siteN = S.products.filter(p => p.onSite), siteGaps = siteN.filter(p => siteMissing(p, S.settings).length).length;
+  h += `<div class="stitle">سایت</div><div class="group enter"><button class="cell" data-sitecat ${siteN.length ? '' : 'disabled'}><span class="c-main"><b>خروجی کاتالوگ سایت</b>
+    <small>${say(siteN.length ? `${siteN.length} محصول روی سایت${siteGaps ? `؛ ${siteGaps} تا هنوز چیزی کم دارند` : '؛ همه کامل'}` : 'اول در صفحهٔ محصول «روی سایت نشان بده» را روشن کنید')}</small></span>${svg('chev')}</button></div>
+    <p class="foot">فقط نام، توضیح کوتاه، عکس، نوع، فلز، وزن، قیمت ویترین و «موجود یا سفارشی». هزینه‌ها و مشتری‌ها در آن نیست.</p>`;
   h += `<div class="stitle">پشتیبان</div><div class="group enter"><button class="cell" data-export><span>گرفتن فایل پشتیبان</span>${svg('chev')}</button>
     <label class="cell"><span>بازگردانی از فایل</span>${svg('chev')}<input type="file" accept="application/json" data-import hidden></label></div>
     <p class="foot">داده‌ها روی همین دستگاه و، با حساب مشترک، روی سرور است؛ هر چند وقت یک پشتیبان بگیرید.</p>
@@ -1072,9 +1180,22 @@ async function save() {
 async function exportAll() {
   const photos = [];
   for (const ph of await db.all('photos')) photos.push({ id: ph.id, data: await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(ph.blob); }) });
-  const blob = new Blob([JSON.stringify({ app: 'seenzhin', v: 1, at: Date.now(), settings: S.settings, products: S.products, invoices: S.invoices, customers: S.customers, orders: S.orders, photos })], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'seenzhin', v: 1, at: Date.now(), settings: S.settings, products: S.products, invoices: S.invoices, customers: S.customers, orders: S.orders, expenses: S.expenses, photos })], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `seenzhin-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+// The public catalog for the website, as one file (photos inside). Format: docs/SITE-CONTRACT.md.
+async function exportCatalog() {
+  const items = siteCatalog(S.products, S.settings, unitsFor), photoData = {};
+  for (const id of items.flatMap(it => it.photos)) {
+    const ph = await db.getOne('photos', id);
+    if (ph && ph.blob) photoData[id] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(ph.blob); });
+  }
+  const file = new File([JSON.stringify(catalogFile(items, photoData))], `seenzhin-catalog-${new Date().toISOString().slice(0, 10)}.json`, { type: 'application/json' });
+  logEvent(`خروجی کاتالوگ سایت گرفت؛ ${items.length} محصول`);
+  if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file] }); return; } catch { /* cancelled */ } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 async function importAll(file) {
@@ -1085,7 +1206,7 @@ async function importAll(file) {
     await db.clear('products'); await db.clear('photos');
     for (const ph of data.photos || []) await db.put('photos', { id: ph.id, blob: await (await fetch(ph.data)).blob() });
     await db.putMany('products', data.products || []);
-    for (const k of ['invoices', 'customers', 'orders']) if (data[k]) { await db.clear(k); await db.putMany(k, data[k]); }
+    for (const k of ['invoices', 'customers', 'orders', 'expenses']) if (data[k]) { await db.clear(k); await db.putMany(k, data[k]); }
     await db.set('settings', data.settings);
     location.reload();
   } catch { island('این فایل پشتیبان سینژین نیست'); }
@@ -1119,7 +1240,7 @@ function bind() {
     if ('back' in ds) return goBack();
     if ('refresh' in ds) return refresh(t);
     if ('undo' in ds) { const f = S.undo; S.undo = null; $('#undo').classList.remove('show'); if (f) { await f(); island('برگردانده شد'); } return; }
-    if ('close' in ds) { S.inv = null; S.preview = null; if (S.ed && S.ed.order) S.ed = null; S.ord = null; S.cust = null; return S.ed ? closeEditor() : (closeSheet(), render()); }
+    if ('close' in ds) { S.inv = null; S.preview = null; if (S.ed && S.ed.order) S.ed = null; S.ord = null; S.cust = null; S.exp = null; return S.ed ? closeEditor() : (closeSheet(), render()); }
     if ('new' in ds) return openEditor(null);
     if (ds.act) return doAct(ds.act);
     if (ds.filter) { S.filter = ds.filter; return render(); }
@@ -1134,6 +1255,7 @@ function bind() {
     if (ds.sup) { const undo = await snap({ settings: true }); S.settings.suppliers[ds.sup] = ds.val; await saveSettings(); render(); return offerUndo('ذخیره شد', undo); }
     if (ds.round != null) { const undo = await snap({ settings: true }); S.settings.rounding = Number(ds.round); await saveSettings(); render(); return offerUndo('ذخیره شد', undo); }
     if ('export' in ds) return exportAll();
+    if ('sitecat' in ds) return exportCatalog();
     if ('signin' in ds) {
       const u = $('#su').value, p = $('#sp').value;
       t.disabled = true; t.textContent = 'در حال ورود…';
@@ -1171,6 +1293,27 @@ function bind() {
     if ('signout' in ds) { if (confirm('از حساب مشترک روی این گوشی خارج شوید؟ داده‌ها پاک نمی‌شوند.')) { await sync.signOut(); render(); } return; }
     if ('inew' in ds) return openInvoice(null);
     if (ds.sv) { S.sv = ds.sv; return render(); }
+    if (ds.month) { S.month = shiftMonth(S.month || monthKey(Date.now()), Number(ds.month)); return render(); }
+    if ('xnew' in ds) return openExpense(null);
+    if (ds.xview) return openExpense(S.expenses.find(e => e.id === ds.xview));
+    if (ds.xrepeat) {
+      const src = S.expenses.find(e => e.id === ds.xrepeat); if (!src) return;
+      const e = { ...src, id: uid(), date: Date.now(), createdAt: null }, undo = await snap({ expenses: [e.id] });
+      await putExpense(e); logEvent(`هزینهٔ ماهانه ثبت کرد: ${expOf(e.cat).name}، ${plain(e.amount)} تومان`); render(); return offerUndo('ثبت شد؛ اگر مبلغ عوض شده، رویش بزنید', undo);
+    }
+    if (S.exp) {
+      const d = S.exp.d;
+      if (ds.xcat) { d.cat = ds.xcat; if (!S.exp.edit) d.monthly = !!expOf(d.cat).monthly; return drawExpense(); }
+      if (ds.xmetal) { d.metal = ds.xmetal; return drawExpense(); }
+      if (ds.xday != null) { d.date = Date.now() - Number(ds.xday) * 864e5; return drawExpense(); }
+      if ('xmonthly' in ds) { d.monthly = !d.monthly; return drawExpense(); }
+      if ('xsave' in ds) return saveExpense();
+      if ('xdel' in ds) {
+        const undo = await snap({ expenses: [d.id] });
+        await db.del('expenses', d.id); S.expenses = S.expenses.filter(e => e.id !== d.id);
+        S.exp = null; closeSheet(); render(); logEvent(`هزینه را حذف کرد: ${expOf(d.cat).name}، ${plain(d.amount)} تومان`); return offerUndo('هزینه حذف شد', undo);
+      }
+    }
     if ('onew' in ds) return openOrder(null);
     if ('cnew' in ds) return openCustomer(null);
     if (ds.oview) return openOrder(S.orders.find(o => o.id === ds.oview));
@@ -1270,6 +1413,13 @@ function bind() {
     const el = e.target;
     if (el.dataset.brand) { (S.settings.brand ||= {})[el.dataset.brand] = el.value; clearTimeout(pendingSetting.b); pendingSetting.b = setTimeout(saveSettings, 600); return; }
     if (S.cust && el.dataset.ctext) { S.cust.d[el.dataset.ctext] = el.value; return; }
+    if (S.exp && (el.dataset.xnum || el.dataset.xtext)) {
+      const d = S.exp.d;
+      if (el.dataset.xtext) { d[el.dataset.xtext] = el.value; return; }
+      const v = parseNum(el.value);
+      if (el.dataset.dec) el.value = faDigits(el.value).replace('.', '٫'); else if (v != null) el.value = fmt(v);
+      d[el.dataset.xnum] = v; const hn = $('#xhint'); if (hn) hn.innerHTML = xHint(d); return;
+    }
     if (S.ord && !S.ed && (el.dataset.otext || el.dataset.onum)) {
       const k = el.dataset.otext || el.dataset.onum;
       if (el.dataset.onum) { const v = parseNum(el.value); if (v != null) el.value = fmt(v); S.ord.d[k] = v; return; }

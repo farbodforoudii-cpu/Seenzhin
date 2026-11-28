@@ -15,7 +15,7 @@ const OUT = (process.env.OUT || '/tmp/seenzhin-shots/');
     if (scheme === 'light') await pg.screenshot({ path: OUT + 'empty.png' });
     // seed
     await pg.evaluate(async () => {
-      const open = () => new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => r(q.result); });
+      const open = () => new Promise(r => { const q = indexedDB.open('seenzhin', 5); q.onsuccess = () => r(q.result); });
       const db = await open();
       const put = (store, obj, key) => new Promise(r => { const t = db.transaction(store, 'readwrite'); key ? t.objectStore(store).put(obj, key) : t.objectStore(store).put(obj); t.oncomplete = r; });
       const photo = async (h1, h2) => { const c = document.createElement('canvas'); c.width = c.height = 600; const g = c.getContext('2d');
