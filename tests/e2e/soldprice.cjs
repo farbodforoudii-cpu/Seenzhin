@@ -12,7 +12,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   pg.on('pageerror', e => errors.push(e.message)); pg.on('console', m => m.type() === 'error' && errors.push(m.text()));
   await pg.goto('http://localhost:8771/'); await pg.waitForTimeout(400);
   await pg.evaluate(async () => {
-    const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 3); q.onsuccess = () => r(q.result); });
+    const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => r(q.result); });
     const put = (s, o, k) => new Promise(r => { const t = db.transaction(s, 'readwrite'); k ? t.objectStore(s).put(o, k) : t.objectStore(s).put(o); t.oncomplete = r; });
     await put('kv', { prices: { silver: 150000, gold: null }, pricesAt: { silver: Date.now() }, suppliers: { silver: 'self', gold: 'self', bronze: 'workshop' },
       factors: { jewelry: { simple: 2.2, designed: 2.8, special: 3.5 }, panel: {}, volume: {} }, markup: 2, rounding: 100000, brand: {} }, 'settings');
@@ -23,7 +23,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
     await put('invoices', { id: 'i1', no: '1405-001', date: now - 864e5, items: [{ productId: 'old', title: 'قدیمی', price: 3000000, listPrice: 7200000 }], shipping: 0, discount: 0, paid: 3000000, customer: {}, note: '' });
   });
   await pg.reload(); await pg.waitForTimeout(1200);
-  const get = id => pg.evaluate(id => new Promise(r => { const q = indexedDB.open('seenzhin', 3); q.onsuccess = () => { const g = q.result.transaction('products').objectStore('products').get(id); g.onsuccess = () => r(g.result); }; }), id);
+  const get = id => pg.evaluate(id => new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => { const g = q.result.transaction('products').objectStore('products').get(id); g.onsuccess = () => r(g.result); }; }), id);
   let o = await get('old');
   const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
   // formula: silver 10 g × 150,000 × 2 = 3,000,000 + 1,500,000 × 2.8 = 4,200,000 → 7,200,000
@@ -37,7 +37,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   await pg.click('[data-isave]'); await pg.waitForTimeout(900);
   await pg.screenshot({ path: OUT + 'sold-invoice.png' });
   const n = await get('new');
-  const inv = await pg.evaluate(() => new Promise(r => { const q = indexedDB.open('seenzhin', 3); q.onsuccess = () => { const g = q.result.transaction('invoices').objectStore('invoices').getAll(); g.onsuccess = () => r(g.result); }; }));
+  const inv = await pg.evaluate(() => new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => { const g = q.result.transaction('invoices').objectStore('invoices').getAll(); g.onsuccess = () => r(g.result); }; }));
   const ni = inv.find(i => i.items[0].productId === 'new');
   ok(n.approved.price === 7200000, `new sale: library price stays ${n.approved.price}`);
   ok(ni && ni.items[0].price === 5300000, `invoice item ${ni && ni.items[0].price}`);

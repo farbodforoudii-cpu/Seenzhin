@@ -152,6 +152,12 @@ export async function renderInvoice(inv, brand, logo, photo) {
   y += cardH + 50;
 
   if (hasNote) { font(400, 22); txt('توضیحات', R, y, 'right', C.faint); font(400, 25); txt(fit(ctx, inv.note, R - L), R, y + 42, 'right', C.sec); y += 110; }
+  // Deposit terms of a custom order, while it is not settled (decided with the customer up front).
+  if (inv.terms && T.status !== 'paid') {
+    font(400, 22); txt('شرایط سفارش', R, y, 'right', C.faint);
+    font(400, 23); const ls = wrap(ctx, inv.terms, R - L).slice(0, 3);
+    ls.forEach((l, k) => txt(l, R, y + 40 + k * 36, 'right', C.sec)); y += 60 + ls.length * 36;
+  }
 
   // footer: care, thanks, contact, the brand line, right under the content
   y += 20; H = y + 290;

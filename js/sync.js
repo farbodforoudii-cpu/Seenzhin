@@ -40,6 +40,11 @@ async function fingerprint(key) {
 }
 
 const recId = (kind, key) => `s:${kind}:${key}`;
+// Record kind → IndexedDB store. A kind this version does not know is left on the server, untouched and unread,
+// so the next version still finds it.
+const STORE = { product: 'products', invoice: 'invoices', photo: 'photos', log: 'log', customer: 'customers', order: 'orders' };
+// Raised when a version learns new kinds: such phones read the whole account once more.
+const KINDS_V = 2;
 const saveMeta = () => raw.set('syncMeta', S.meta);
 
 function track(kind, ids, deleted) {
@@ -63,7 +68,8 @@ async function pull() {
     const rows = await rpc('eco_pull', { p_key: S.key, p_app: APP, p_after: S.cursor, p_limit: 200 });
     for (const { data: d } of rows) {
       if (S.meta.at[d.id] && S.meta.at[d.id] >= d.updatedAt) continue;
-      const store = { product: 'products', invoice: 'invoices', photo: 'photos', log: 'log' }[d.kind];
+      const store = STORE[d.kind];
+      if (!store && d.kind !== 'kv') continue;
       if (store) {
         if (d.deleted) await raw.del(store, d.key);
         else if (d.kind === 'photo') await raw.put('photos', { id: d.key, blob: await dataToBlob(d.value) });
@@ -94,7 +100,7 @@ async function push() {
     if (S.meta.gone[r]) { small.push({ ...base, deleted: true }); continue; }
     if (kind === 'photo') { const p = await db.getOne('photos', key); if (p) photos.push({ ...base, value: await blobToData(p.blob) }); else delete S.meta.dirty[r]; continue; }
     if (kind === 'kv') { const v = await db.get(key); small.push({ ...base, value: key === 'logo' ? (v ? await blobToData(v) : null) : v ?? null }); continue; }
-    const v = await db.getOne({ product: 'products', invoice: 'invoices', log: 'log' }[kind], key);
+    const v = await db.getOne(STORE[kind], key);
     if (v) small.push({ ...base, value: v }); else delete S.meta.dirty[r];
   }
   const send = async chunk => {
@@ -113,6 +119,8 @@ async function seed() {
   for (const p of await db.all('products')) mark(recId('product', p.id));
   for (const i of await db.all('invoices')) mark(recId('invoice', i.id));
   for (const l of await db.all('log')) mark(recId('log', l.id));
+  for (const c of await db.all('customers')) mark(recId('customer', c.id));
+  for (const o of await db.all('orders')) mark(recId('order', o.id));
   for (const p of await db.all('photos')) mark(recId('photo', p.id));
   for (const k of ['settings', 'logo']) if ((await db.get(k)) != null) mark(recId('kv', k));
   await saveMeta();
@@ -129,6 +137,13 @@ export const sync = {
     S.cursor = (await db.get('syncCursor')) || null;
     S.last = (await db.get('syncLast')) || null;
     S.meta = (await db.get('syncMeta')) || S.meta;
+    // An older version skipped kinds it did not know (customers, orders): read everything once more.
+    if (S.key && ((await db.get('syncKinds')) || 1) < KINDS_V) {
+      S.cursor = null;
+      for (const r of Object.keys(S.meta.at)) if (/^s:(customer|order):/.test(r) && !S.meta.dirty[r]) delete S.meta.at[r];
+      await raw.set('syncCursor', null); await saveMeta();
+    }
+    await raw.set('syncKinds', KINDS_V);
     S.fp = await fingerprint(S.key);
     S.status = S.key ? 'idle' : 'off';
     changes.onWrite = S.key ? track : null;

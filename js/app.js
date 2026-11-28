@@ -7,10 +7,11 @@ import { fmt, fmtDec, iso, parseNum, esc, faDigits, short, shortParts } from './
 import { insights, suggestInvoice, marketGap, shownPrice, jobsFor } from './analysis.js';
 import { totals, nextNumber, noFa, STATUS_NAME, renderInvoice } from './invoice.js';
 import { sync } from './sync.js';
+import { STAGES, STAGE_NAME, TERMS, isOpen, refundable, orderSettings, orderPrice, suggestDeposit, orderProfit, normPhone, customerId, findCustomer, customerStats, orderAlerts } from './orders.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
-const APP_VERSION = '۲۳';
+const APP_VERSION = '۲۴';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -45,8 +46,10 @@ const timeFa = ts => { const d = new Date(ts); return new Intl.DateTimeFormat('f
 
 // ---------- undo: every change that matters can be taken back for a few seconds ----------
 // snap() copies the records an action is about to change; the returned function puts them back exactly.
-async function snap({ products = [], invoices = [], photos = [], settings = false }) {
-  const keep = { p: [], i: [], ph: [], st: settings ? JSON.parse(JSON.stringify(S.settings)) : null };
+async function snap({ products = [], invoices = [], photos = [], settings = false, customers = [], orders = [] }) {
+  const keep = { p: [], i: [], ph: [], c: [], o: [], st: settings ? JSON.parse(JSON.stringify(S.settings)) : null };
+  for (const id of customers) keep.c.push([id, await db.getOne('customers', id)]);
+  for (const id of orders) keep.o.push([id, await db.getOne('orders', id)]);
   for (const id of products) keep.p.push([id, await db.getOne('products', id)]);
   for (const id of invoices) keep.i.push([id, await db.getOne('invoices', id)]);
   for (const id of photos) keep.ph.push([id, await db.getOne('photos', id)]);
@@ -54,6 +57,9 @@ async function snap({ products = [], invoices = [], photos = [], settings = fals
     for (const [id, ph] of keep.ph) if (ph) await db.put('photos', ph);
     for (const [id, v] of keep.p) v ? await db.put('products', { ...v, updatedAt: Date.now() }) : await db.del('products', id);
     for (const [id, v] of keep.i) v ? await db.put('invoices', v) : await db.del('invoices', id);
+    for (const [id, v] of keep.c) v ? await db.put('customers', { ...v, updatedAt: Date.now() }) : await db.del('customers', id);
+    for (const [id, v] of keep.o) v ? await db.put('orders', { ...v, updatedAt: Date.now() }) : await db.del('orders', id);
+    if ((keep.o.length || keep.c.length) && $('#sheet').classList.contains('open') && (S.ord || S.cust)) { S.ord = null; S.cust = null; closeSheet(); }
     if (keep.st) { S.settings = keep.st; await saveSettings(); }
     await load(); render();
   };
@@ -71,7 +77,9 @@ function goBack() {
   if ($('#sheet').classList.contains('open')) {
     if (S.ed && S.ed.step > 0 && S.ed.step < 4) { S.ed.step--; drawEditor(); $('#sheet .panel').scrollTop = 0; return; }
     S.inv = null; S.preview = null;
-    return S.ed ? closeEditor() : closeSheet();
+    if (S.ed) return closeEditor();
+    const wasOrd = S.ord || S.cust; S.ord = null; S.cust = null;
+    closeSheet(); if (wasOrd) render(); return;
   }
   const prev = (S.tabs || []).pop();
   if (prev) { S.tab = prev; render(); scrollTo(0, 0); }
@@ -94,6 +102,8 @@ async function load() {
   urls.clear();
   for (const ph of await db.all('photos')) if (ph.blob) urls.set(ph.id, URL.createObjectURL(ph.blob));
   S.invoices = (await db.all('invoices')).sort((a, b) => b.date - a.date);
+  S.customers = (await db.all('customers')).sort((a, b) => b.createdAt - a.createdAt);
+  S.orders = (await db.all('orders')).sort((a, b) => b.createdAt - a.createdAt);
   const lg = await db.get('logo');
   S.logo = lg ? URL.createObjectURL(lg) : null;
   S.log = (await db.all('log')).sort((a, b) => b.at - a.at).slice(0, 300);
@@ -115,6 +125,7 @@ async function boot() {
   sync.onChange(() => { if (S.tab === 'settings' && !$('#sheet').classList.contains('open')) render(); });
   await sync.init();
   await repairSold();
+  await linkOldInvoices();
   loadMarket();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     // A new version takes over → reload once, so both phones are always on the latest app without reopening.
@@ -230,6 +241,12 @@ function todo() {
   const next = setupSteps(S.settings, S.products).find(s => !s.done);
   if (next) L.push({ tone: 'o', t: next.text, d: 'قدم بعدی برای راه‌اندازی', act: next.id === 'first' ? 'new' : 'settings' });
   for (const g of marketGap(S.settings, S.market)) L.push({ tone: 'o', t: `${MARKET_NAME[g.id]} ${Math.abs(Math.round(g.pct * 100))}٪ ${g.pct > 0 ? 'گران‌تر' : 'ارزان‌تر'} شده است`, d: `بازار ${plain(g.market)}، ثبت‌شده ${plain(g.saved)} تومان هر گرم`, act: 'market:' + g.id, btn: 'به‌روز کن' });
+  for (const a of orderAlerts(S.orders).slice(0, 2)) {
+    const o = a.o, who = (custOf(o.customerId) || {}).name || 'مشتری';
+    L.push(a.kind === 'ready' ? { tone: 'o', t: `«${orderTitle(o)}» آماده است`, d: `به ${who} خبر دهید؛ بعد از تحویل، «تحویل و تسویه»`, act: 'order:' + o.id }
+      : a.kind === 'late' ? { tone: 'r', t: `تحویل «${orderTitle(o)}» ${a.days} روز عقب افتاده`, d: `${who}؛ ${STAGE_NAME[o.stage]}`, act: 'order:' + o.id }
+      : { tone: 'o', t: `تحویل «${orderTitle(o)}» ${a.days ? `${a.days} روز دیگر` : 'امروز'}`, d: `${who}؛ ${STAGE_NAME[o.stage]}`, act: 'order:' + o.id });
+  }
   const dr = drifted(S.products, S.settings);
   if (dr.length) L.push({ tone: 'o', t: `${dr.length} قیمت تازه منتظر تأیید است`, d: 'برای دیدن قیمت قبلی و تازه بزنید', act: 'drift' });
   if (sync.state.key && !S.who) L.push({ tone: 'o', t: 'بگویید این گوشی مال کیست', d: 'تا در تاریخچه معلوم باشد چه کسی چه کرده', act: 'settings' });
@@ -316,24 +333,6 @@ function viewAnalysis() {
 
 // ---------- sales: invoices ----------
 const DAY = 864e5;
-function viewSales() {
-  let h = head('فروش', 'فاکتورها', `<button class="add-pill" data-inew>${svg('plus')}<span>فاکتور</span></button>`);
-  const recent = S.invoices.filter(i => Date.now() - i.date <= 30 * DAY);
-  const sum = recent.reduce((a, i) => a + totals(i).total, 0);
-  const owed = S.invoices.map(i => ({ i, t: totals(i) })).filter(x => x.t.remaining > 0 && x.t.paid > 0);
-  const owedSum = owed.reduce((a, x) => a + x.t.remaining, 0);
-  const sp = shortParts(sum);
-  h += `<section class="hero enter"><span class="hero-k">فروش ۳۰ روز اخیر</span>
-    ${sum ? `<div class="hero-n"><b data-count="${sum}">${sp.num}</b><small>${sp.unit}</small></div>` : '<div class="hero-n empty"><b>هنوز فروشی نیست</b></div>'}
-    <span class="hero-s">${say(recent.length ? `${recent.length} فاکتور${owedSum ? `؛ ${plain(owedSum)} تومان مانده از بیعانه‌ها` : ''}` : 'هنوز فاکتوری صادر نشده است')}</span></section>`;
-  if (!S.invoices.length) return h + `<div class="empty enter"><p>از روی یک محصول یا همین‌جا فاکتور بسازید؛ قیمت، عکس و جمع‌ها خودکار پر می‌شوند.</p><button class="btn" data-inew>اولین فاکتور</button></div>`;
-  const cell = i => { const t = totals(i); return `<button class="cell" data-iview="${i.id}"><span class="c-main"><b>${esc((i.customer && i.customer.name) || 'بی‌نام')}</b><small>${noFa(i.no)}، ${say(`${i.items.length} قلم`)}</small></span>
-    <span class="amt">${short(t.total)}</span><span class="st st-${t.status}">${STATUS_NAME[t.status]}</span></button>`; };
-  if (owed.length) h += `<div class="stitle">مانده از مشتری‌ها</div><div class="group enter">${owed.map(x => cell(x.i)).join('')}</div>`;
-  h += `<div class="stitle">همهٔ فاکتورها</div><div class="group enter">${S.invoices.map(cell).join('')}</div>`;
-  return h;
-}
-
 const itemOf = p => ({
   listPrice: shownPrice(p, S.settings),
   sub: p.sub, material: p.material, weight: supplierOf(S.settings, p.material) === 'self' ? p.weight : null, level: p.level,
@@ -341,8 +340,9 @@ const itemOf = p => ({
   title: p.title || p.sub || 'محصول',
   detail: [p.sub, matOf(p.material) && p.material !== 'none' ? matOf(p.material).name : '', supplierOf(S.settings, p.material) === 'self' && p.weight ? `${faDigits(p.weight)} گرم` : ''].filter(Boolean).join('، '),
 });
-function openInvoice(inv, productId) {
-  const base = inv ? JSON.parse(JSON.stringify(inv)) : { id: uid(), no: nextNumber(S.invoices), date: Date.now(), customer: { name: '', phone: '' }, items: [], shipping: null, discount: null, paid: null, note: '' };
+function openInvoice(inv, productId, cust) {
+  const base = inv ? JSON.parse(JSON.stringify(inv)) : { id: uid(), no: nextNumber(S.invoices), date: Date.now(), customer: { name: cust ? cust.name : '', phone: cust ? cust.phone || '' : '' }, customerId: cust ? cust.id : null, items: [], shipping: null, discount: null, paid: null, note: '' };
+  S.cust = null; S.ord = null;
   if (productId) { const p = S.products.find(x => x.id === productId); if (p) base.items.push(itemOf(p)); }
   S.inv = { d: base, edit: !!inv };
   openSheet('');
@@ -365,7 +365,7 @@ function drawInvoice() {
   const d = S.inv.d, panel = $('#sheet .panel');
   const chosen = new Set(d.items.map(i => i.productId).filter(Boolean));
   const sellable = S.products.filter(p => (unitsFor(p).left > 0 || chosen.has(p.id)) && shownPrice(p, S.settings) != null);
-  const names = [...new Set(S.invoices.map(i => i.customer && i.customer.name).filter(Boolean))];
+  const names = [...new Set([...S.customers.map(c => c.name), ...S.invoices.map(i => i.customer && i.customer.name)].filter(Boolean))];
   const t = totals(d);
   const nf = (key, label, val, ph) => `<label class="cell"><span>${label}</span><input class="bare" data-inum="${key}" inputmode="numeric" placeholder="${ph}" value="${val == null ? '' : fmt(val)}"><em class="u">تومان</em></label>`;
   let h = `<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button><span class="sec">${noFa(d.no)}</span></div>
@@ -432,6 +432,13 @@ async function saveInvoice() {
   const undo = await snap({ invoices: [d.id], products: d.items.map(it => it.productId).filter(Boolean) });
   // When it was paid in full: sales and ready counts are worked out from this.
   if (t.status === 'paid') d.paidAt = d.paidAt || now; else delete d.paidAt;
+  // The buyer is a customer (found by phone, then name, or made new).
+  const c = await linkCustomer(d.customer.name, d.customer.phone);
+  d.customerId = c ? c.id : null;
+  // A custom order's invoice paid in full: the order is delivered.
+  const ord = d.orderId && S.orders.find(o => o.id === d.orderId);
+  const ordUndo = ord ? await snap({ orders: [ord.id] }) : null;
+  if (ord && t.status === 'paid' && ord.stage !== 'cancelled' && ord.stage !== 'done') { ord.stage = 'done'; ord.doneAt = now; d.terms = null; await putOrder(ord); logEvent(`${orderNo(ord)}: تحویل و تسویه شد`); }
   await db.put('invoices', d);
   const i = S.invoices.findIndex(x => x.id === d.id);
   if (i >= 0) S.invoices[i] = d; else S.invoices.unshift(d);
@@ -439,9 +446,293 @@ async function saveInvoice() {
   // The sale price lives on the invoice; the library price never changes here.
   refreshUnits();
   S.tab = 'sales'; render();
-  logEvent(`فاکتور ${noFa(d.no)} را ساخت${d.customer.name ? ` برای ${d.customer.name}` : ''}؛ ${plain(t.total)} تومان، ${STATUS_NAME[t.status]}`);
+  logEvent(`فاکتور ${noFa(d.no)} را ${S.inv && S.inv.edit ? 'به‌روز کرد' : 'ساخت'}${d.customer.name ? ` برای ${d.customer.name}` : ''}؛ ${plain(t.total)} تومان، ${STATUS_NAME[t.status]}`);
   await showInvoice(d.id);
-  offerUndo(t.status === 'paid' ? 'فاکتور ساخته شد؛ فروش ثبت شد' : 'فاکتور ساخته شد؛ محصول رزرو شد', async () => { closeSheet(); await undo(); });
+  offerUndo(t.status === 'paid' ? 'فاکتور ساخته شد؛ فروش ثبت شد' : 'فاکتور ساخته شد؛ محصول رزرو شد', async () => { closeSheet(); if (ordUndo) await ordUndo(); await undo(); });
+}
+
+// ---------- customers and custom orders (CRM) ----------
+// Decided 1405/09/07: customers sync between both phones; a custom order goes request → deposit → making → ready →
+// delivered; deposit = max(half the estimate, the making cost); it comes back only before making starts; from the
+// deposit on, the order is priced with that day's metal.
+const dayFa = ts => new Intl.DateTimeFormat('fa-IR-u-ca-persian', { day: 'numeric', month: 'long' }).format(new Date(ts));
+const custOf = id => id && S.customers.find(c => c.id === id);
+const orderInv = o => o.invoiceId && S.invoices.find(i => i.id === o.invoiceId);
+const orderTitle = o => (o.spec && (o.spec.title || o.spec.sub)) || 'سفارش';
+const buyerName = i => (custOf(i.customerId) || {}).name || (i.customer && i.customer.name) || 'بی‌نام';
+const orderNo = o => 'سفارش ' + faDigits(o.no || 0);
+
+async function putCustomer(c) {
+  c.updatedAt = Date.now(); c.createdAt ||= c.updatedAt;
+  await db.put('customers', c);
+  const i = S.customers.findIndex(x => x.id === c.id);
+  if (i >= 0) S.customers[i] = c; else S.customers.unshift(c);
+  return c;
+}
+async function putOrder(o) {
+  o.updatedAt = Date.now(); o.createdAt ||= o.updatedAt;
+  await db.put('orders', o);
+  const i = S.orders.findIndex(x => x.id === o.id);
+  if (i >= 0) S.orders[i] = o; else S.orders.unshift(o);
+  return o;
+}
+async function putInvoice(inv) {
+  await db.put('invoices', inv);
+  const i = S.invoices.findIndex(x => x.id === inv.id);
+  if (i >= 0) S.invoices[i] = inv; else S.invoices.unshift(inv);
+}
+// The buyer of an invoice or order becomes a customer: same phone, then same name; otherwise a new customer.
+async function linkCustomer(name, phone) {
+  name = String(name || '').trim(); phone = String(phone || '').trim();
+  if (!name && !normPhone(phone)) return null;
+  const c = findCustomer(S.customers, name, phone);
+  if (c) { if (phone && !c.phone) { c.phone = phone; await putCustomer(c); } return c; }
+  return putCustomer({ id: customerId(name, phone), name: name || 'بی‌نام', phone, insta: '', city: '', address: '', note: '' });
+}
+// Invoices from before customers existed: their buyer becomes a customer once (same id on both phones).
+async function linkOldInvoices() {
+  for (const inv of S.invoices) {
+    if (inv.customerId || !inv.customer || !(inv.customer.name || inv.customer.phone)) continue;
+    const c = await linkCustomer(inv.customer.name, inv.customer.phone);
+    if (c) { inv.customerId = c.id; await db.put('invoices', inv); }
+  }
+}
+
+// --- lists in the «فروش» tab ---
+const SV = [['inv', 'فاکتورها'], ['ord', 'سفارش‌ها'], ['cust', 'مشتری‌ها']];
+function viewSales() {
+  const sv = S.sv || 'inv';
+  const add = { inv: ['inew', 'فاکتور'], ord: ['onew', 'سفارش'], cust: ['cnew', 'مشتری'] }[sv];
+  const openN = S.orders.filter(isOpen).length;
+  let h = head('فروش', 'فاکتور، سفارش و مشتری', `<button class="add-pill" data-${add[0]}>${svg('plus')}<span>${add[1]}</span></button>`);
+  h += `<div class="seg enter">${SV.map(([id, n]) => `<button class="${sv === id ? 'on' : ''}" data-sv="${id}">${n}${id === 'ord' && openN ? ` <i>${faDigits(openN)}</i>` : ''}</button>`).join('')}</div>`;
+  return h + (sv === 'ord' ? ordersList() : sv === 'cust' ? customersList() : invoicesList());
+}
+const icell = i => { const t = totals(i); return `<button class="cell" data-iview="${i.id}"><span class="c-main"><b>${esc(buyerName(i))}</b><small>${noFa(i.no)}، ${say(`${i.items.length} قلم`)}</small></span>
+  <span class="amt">${short(t.total)}</span><span class="st st-${t.status}">${STATUS_NAME[t.status]}</span></button>`; };
+function invoicesList() {
+  const recent = S.invoices.filter(i => Date.now() - i.date <= 30 * DAY);
+  const sum = recent.reduce((a, i) => a + totals(i).total, 0);
+  const owed = S.invoices.map(i => ({ i, t: totals(i) })).filter(x => x.t.remaining > 0 && x.t.paid > 0);
+  const owedSum = owed.reduce((a, x) => a + x.t.remaining, 0);
+  const sp = shortParts(sum);
+  let h = `<section class="hero enter"><span class="hero-k">فروش ۳۰ روز اخیر</span>
+    ${sum ? `<div class="hero-n"><b data-count="${sum}">${sp.num}</b><small>${sp.unit}</small></div>` : '<div class="hero-n empty"><b>هنوز فروشی نیست</b></div>'}
+    <span class="hero-s">${say(recent.length ? `${recent.length} فاکتور${owedSum ? `؛ ${plain(owedSum)} تومان مانده از بیعانه‌ها` : ''}` : 'هنوز فاکتوری صادر نشده است')}</span></section>`;
+  if (!S.invoices.length) return h + `<div class="empty enter"><p>از روی یک محصول یا همین‌جا فاکتور بسازید؛ قیمت، عکس و جمع‌ها خودکار پر می‌شوند.</p><button class="btn" data-inew>اولین فاکتور</button></div>`;
+  if (owed.length) h += `<div class="stitle">مانده از مشتری‌ها</div><div class="group enter">${owed.map(x => icell(x.i)).join('')}</div>`;
+  return h + `<div class="stitle">همهٔ فاکتورها</div><div class="group enter">${S.invoices.map(icell).join('')}</div>`;
+}
+function ocell(o) {
+  const c = custOf(o.customerId), r = orderPrice(o, S.settings);
+  const when = o.due && isOpen(o) ? `، تحویل ${dayFa(o.due)}` : '';
+  return `<button class="cell" data-oview="${o.id}"><span class="c-main"><b>${esc(orderTitle(o))}</b><small>${esc(c ? c.name : 'بی‌نام')}${say(when)}</small></span>
+    ${r.complete ? `<span class="amt">${short(r.final)}</span>` : ''}<span class="st st-${o.stage}">${STAGE_NAME[o.stage]}</span></button>`;
+}
+function ordersList() {
+  const open = S.orders.filter(isOpen).sort((a, b) => STAGES.findIndex(s => s.id === b.stage) - STAGES.findIndex(s => s.id === a.stage) || (a.due || 9e15) - (b.due || 9e15));
+  const past = S.orders.filter(o => !isOpen(o)).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 30);
+  const held = open.reduce((a, o) => { const inv = orderInv(o); return a + (inv ? totals(inv).paid : 0); }, 0);
+  let h = `<section class="hero enter"><span class="hero-k">سفارش‌های باز</span>
+    <div class="hero-n ${open.length ? '' : 'empty'}"><b>${open.length ? faDigits(open.length) : 'سفارش بازی نیست'}</b>${open.length ? '<small>سفارش</small>' : ''}</div>
+    <span class="hero-s">${say(held ? `${plain(held)} تومان بیعانه گرفته شده؛ قیمت فلزشان قفل است` : 'سفارش سفارشی: قیمت برآوردی، بیعانه، ساخت و تحویل')}</span></section>`;
+  if (!S.orders.length) return h + `<div class="empty enter"><p>مشتری چیزی سفارش داد؟ همین‌جا ثبتش کنید؛ قیمت برآوردی و بیعانهٔ منصفانه خودکار حساب می‌شود.</p><button class="btn" data-onew>اولین سفارش</button></div>`;
+  if (open.length) h += `<div class="stitle">در جریان</div><div class="group enter">${open.map(ocell).join('')}</div>`;
+  if (past.length) h += `<div class="stitle">تمام‌شده</div><div class="group enter">${past.map(ocell).join('')}</div>`;
+  return h;
+}
+function customersList() {
+  if (!S.customers.length) return `<div class="empty enter"><p>هر کس فاکتور یا سفارش بگیرد، خودش اینجا می‌آید؛ یا همین‌جا اضافه کنید.</p><button class="btn" data-cnew>اولین مشتری</button></div>`;
+  const rows = S.customers.map(c => ({ c, s: customerStats(c, S.invoices, S.orders) })).sort((a, b) => (b.s.last || b.c.createdAt) - (a.s.last || a.c.createdAt));
+  const total = rows.reduce((a, x) => a + x.s.bought, 0);
+  let h = `<section class="hero enter"><span class="hero-k">مشتری‌ها</span><div class="hero-n"><b>${faDigits(rows.length)}</b><small>نفر</small></div>
+    <span class="hero-s">${say(total ? `جمع خریدها ${plain(total)} تومان` : 'هنوز خرید تسویه‌شده‌ای نیست')}</span></section>`;
+  return h + `<div class="group enter">${rows.map(({ c, s }) => `<button class="cell" data-cview="${c.id}"><span class="c-main"><b>${esc(c.name)}</b>
+    <small>${say([s.n ? `${s.n} خرید، ${plain(s.bought)} تومان` : 'هنوز خریدی نیست', s.open ? `${s.open} سفارش باز` : '', s.owed ? `مانده ${plain(s.owed)}` : ''].filter(Boolean).join('، '))}</small></span>${svg('chev')}</button>`).join('')}</div>`;
+}
+
+// --- one customer ---
+function openCustomer(c) {
+  S.cust = { d: c ? JSON.parse(JSON.stringify(c)) : { id: null, name: '', phone: '', insta: '', city: '', address: '', note: '' }, edit: !!c };
+  S.ord = null; S.inv = null;
+  if ($('#sheet').classList.contains('open')) drawCustomer(); else { openSheet(''); drawCustomer(); }
+}
+function drawCustomer() {
+  const { d, edit } = S.cust;
+  const tf = (k, label, ph, mode = '') => `<label class="cell"><span>${label}</span><input class="bare txt" data-ctext="${k}" ${mode} placeholder="${ph}" value="${esc(d[k] || '')}"></label>`;
+  let h = `<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button><span class="sec">مشتری</span></div>
+    <h2 class="q">${esc(d.name || 'مشتری تازه')}</h2>`;
+  if (edit) {
+    const s = customerStats(d, S.invoices, S.orders), ph = normPhone(d.phone), ig = String(d.insta || '').replace(/^@/, '').trim();
+    const links = [ph ? `<a class="chip" href="tel:${ph}">تماس</a>` : '', ph ? `<a class="chip" href="https://wa.me/98${ph.slice(1)}" target="_blank" rel="noopener">واتس‌اپ</a>` : '',
+      ig ? `<a class="chip" href="https://instagram.com/${encodeURIComponent(ig)}" target="_blank" rel="noopener">اینستاگرام</a>` : ''].join('');
+    if (links) h += `<div class="chips quick">${links}</div>`;
+    h += `<div class="stats group"><div><small>جمع خرید</small><b>${s.bought ? short(s.bought) : '—'}</b><small>${say(`${s.n} خرید تسویه‌شده`)}</small></div>
+      <div><small>آخرین خرید</small><b>${s.last ? say(dayFa(s.last)) : '—'}</b><small>${s.owed ? say(`مانده ${plain(s.owed)}`) : 'بدون مانده'}</small></div></div>`;
+    const ords = S.orders.filter(o => o.customerId === d.id);
+    if (ords.length) h += `<div class="stitle">سفارش‌ها</div><div class="group">${ords.map(ocell).join('')}</div>`;
+    if (s.invoices.length) h += `<div class="stitle">فاکتورها</div><div class="group">${s.invoices.map(icell).join('')}</div>`;
+    h += `<div class="chips quick"><button class="chip" data-cinv>فاکتور تازه برای او</button><button class="chip" data-cord>سفارش تازه برای او</button></div>`;
+  }
+  h += `<div class="stitle">اطلاعات</div><div class="group">${tf('name', 'نام', 'نام و نام خانوادگی')}${tf('phone', 'تلفن', '۰۹۱۲…', 'inputmode="tel"')}${tf('insta', 'اینستاگرام', 'آیدی، بدون @')}
+    ${tf('city', 'شهر', 'اختیاری')}${tf('address', 'آدرس', 'برای ارسال')}${tf('note', 'یادداشت', 'سایز انگشت، سلیقه، مناسبت…')}</div>
+    <p class="foot">روی هر دو گوشی دیده می‌شود؛ فقط در حساب سینژین.</p>
+    <div class="ed-foot">${edit && !S.invoices.some(i => i.customerId === d.id) && !S.orders.some(o => o.customerId === d.id) ? '<button class="btn ghost danger" data-cdel>حذف</button>' : ''}<button class="btn" data-csave>ذخیره</button></div>`;
+  $('#sheet .panel').innerHTML = h;
+}
+async function saveCustomer() {
+  const d = S.cust.d;
+  if (!d.name.trim()) return island('نام مشتری را بنویسید');
+  if (!S.cust.edit) {
+    const dup = findCustomer(S.customers, d.name, d.phone);
+    if (dup) { island('این مشتری از قبل هست'); return openCustomer(dup); }
+    d.id = customerId(d.name, d.phone);
+  }
+  const prev = S.cust.edit ? S.customers.find(c => c.id === d.id) : null;
+  const undo = await snap({ customers: [d.id] });
+  await putCustomer({ ...(prev || {}), ...d, name: d.name.trim() });
+  logEvent(`${prev ? 'اطلاعات مشتری' : 'مشتری تازه'} «${d.name.trim()}» را ${prev ? 'به‌روز کرد' : 'ثبت کرد'}`);
+  S.cust = null; closeSheet(); S.tab = 'sales'; S.sv = 'cust'; render();
+  offerUndo('مشتری ذخیره شد', undo);
+}
+
+// --- one custom order ---
+const DUE = [[7, 'یک هفته'], [14, 'دو هفته'], [21, 'سه هفته'], [30, 'یک ماه']];
+function openOrder(o, cust) {
+  const c = o ? custOf(o.customerId) : cust;
+  const d = o ? JSON.parse(JSON.stringify(o)) : { id: uid(), no: Math.max(0, ...S.orders.map(x => x.no || 0)) + 1, stage: 'request', customerId: c ? c.id : null, spec: null, due: null, note: '' };
+  S.ord = { d, edit: !!o, cname: c ? c.name : '', cphone: c ? c.phone || '' : '' };
+  S.cust = null; S.inv = null;
+  if ($('#sheet').classList.contains('open')) drawOrder(); else { openSheet(''); drawOrder(); }
+}
+function drawOrder() {
+  const { d } = S.ord, sp = d.spec, r = orderPrice(d, S.settings), inv = orderInv(d), t = inv ? totals(inv) : null;
+  const dep = suggestDeposit(r, S.settings.rounding || 100000);
+  const si = STAGES.findIndex(s => s.id === d.stage);
+  const names = S.customers.map(c => c.name);
+  let h = `<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button><span class="sec">${orderNo(d)}</span></div>
+    <h2 class="q">${esc(sp ? orderTitle(d) : 'سفارش تازه')}</h2>`;
+  h += d.stage === 'cancelled' ? `<div class="track"><span class="st st-cancelled">لغو شد</span></div>`
+    : `<div class="track">${STAGES.map((s, i) => `<span class="tk ${i < si ? 'done' : i === si ? 'on' : ''}"><i></i>${s.name}</span>`).join('')}</div>`;
+  // who
+  h += `<p class="qn"><span class="n">۱</span>برای چه کسی</p><div class="group">
+    <label class="cell"><span>نام</span><input class="bare txt" data-otext="cname" list="custs" placeholder="نام مشتری" value="${esc(S.ord.cname)}"></label>
+    <label class="cell"><span>تلفن</span><input class="bare txt" data-otext="cphone" inputmode="tel" placeholder="اختیاری" value="${esc(S.ord.cphone)}"></label></div>
+    <datalist id="custs">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>`;
+  // what
+  const desc = sp ? [catOf(sp.cat) && sp.sub, matOf(sp.material) && sp.material !== 'none' ? matOf(sp.material).name : '', sp.weight ? `${sp.weight} گرم` : '', levelOf(sp.level) ? levelOf(sp.level).name : ''].filter(Boolean).join('، ') : '';
+  h += `<p class="qn"><span class="n">۲</span>چه چیزی و چه قیمتی</p><div class="group">
+    <button class="cell" data-ospec><span class="c-main"><b>${sp ? 'مشخصات و قیمت برآوردی' : 'مشخصات را وارد کنید'}</b><small>${sp ? say(desc) : 'نوع، فلز، وزن تقریبی، سطح کار؛ مثل ثبت محصول'}</small></span>${r.complete ? `<span class="amt">${short(r.final)}</span>` : ''}${svg('chev')}</button></div>`;
+  if (d.metal) h += `<p class="foot">${say(`قیمت فلز از روز بیعانه قفل است${d.metal.silver ? `: نقره هر گرم ${plain(d.metal.silver)} تومان` : ''}. ${d.stage === 'making' ? 'وقتی آماده شد، وزن واقعی را ثبت کنید.' : ''}`)}</p>`;
+  // when
+  if (isOpen(d)) {
+    h += `<p class="qn"><span class="n">۳</span>زمان تحویل</p><div class="chips wrap">${DUE.map(([n, l]) => `<button class="chip ${S.ord.dueN === n ? 'on' : ''}" data-odue="${n}">${l}</button>`).join('')}${d.due ? '<button class="chip" data-odue="0">بدون تاریخ</button>' : ''}</div>
+      ${d.due ? `<p class="foot">${say(`تحویل: ${dayFa(d.due)}`)}</p>` : ''}`;
+  }
+  h += `<div class="group"><label class="cell"><span>یادداشت</span><input class="bare txt" data-otext="note" placeholder="سایز، حکاکی، رنگ سنگ…" value="${esc(d.note || '')}"></label></div>`;
+  // money: estimate, a fair deposit with its reason, what came in
+  if (r.complete) {
+    h += `<div class="stitle">پول</div><div class="group">
+      <div class="cell"><span>${d.stage === 'ready' || d.stage === 'done' ? 'قیمت نهایی (وزن واقعی)' : 'قیمت برآوردی'}</span><b class="amt">${iso(fmt(r.final))}</b></div>`;
+    if (!inv && d.stage === 'request' && dep) {
+      h += `<label class="cell"><span>بیعانه</span><input class="bare" data-onum="deposit" inputmode="numeric" placeholder="${fmt(dep.value)}" value="${d.deposit ? fmt(d.deposit) : ''}"><em class="u">تومان</em></label></div>
+        <p class="foot">${say(`پیشنهاد ${plain(dep.value)} تومان: بیشترِ نصف قیمت (${plain(dep.half)}) و هزینهٔ ساخت (${plain(dep.cost)})، تا اگر مشتری بعد از شروع ساخت انصراف داد، سینژین ضرر نکند.`)}</p>`;
+    } else if (t) {
+      h += `<div class="cell"><span>دریافت‌شده</span><b class="amt">${iso(fmt(t.paid))}</b></div>${t.remaining ? `<div class="cell"><span>مانده</span><b class="amt">${iso(fmt(Math.max(0, r.final - t.paid)))}</b></div>` : ''}</div>`;
+    } else h += `</div>`;
+    if (isOpen(d)) h += `<p class="foot">${esc(TERMS)}</p>`;
+  }
+  if (d.stage === 'done' || d.stage === 'cancelled') {
+    const pr = orderProfit(d, S.settings, inv);
+    if (pr) h += `<div class="stitle">سود و زیان این سفارش</div><div class="group"><div class="cell"><span>فروش</span><b class="amt">${iso(fmt(pr.sale))}</b></div>
+      ${pr.cost != null ? `<div class="cell"><span>هزینهٔ ساخت</span><b class="amt">${iso(fmt(pr.cost))}</b></div><div class="cell"><span>${pr.profit >= 0 ? 'سود' : 'زیان'}</span><b class="amt ${pr.profit >= 0 ? 'ok' : 'warn'}">${iso(fmt(Math.abs(pr.profit)))}</b></div>` : ''}</div>
+      <p class="foot">${say('فروش = قیمت اقلام فاکتور منهای تخفیف (بدون ارسال). هزینهٔ ساخت = فلز با قیمت روز بیعانه + سنگ + هزینهٔ ساخت.')}</p>`;
+    if (d.stage === 'cancelled') h += `<p class="foot">${say(d.refunded ? `لغو پیش از شروع ساخت؛ ${plain(d.refunded)} تومان بیعانه برگشت.` : 'لغو بعد از شروع ساخت؛ بیعانه طبق شرایط نگه داشته شد.')}</p>`;
+  }
+  // what to do next, one main button
+  const next = { request: ['odeposit', 'بیعانه گرفتم'], deposit: ['ostart', 'ساخت شروع شد'], making: ['oready', 'آماده شد'], ready: ['odeliver', 'تحویل و تسویه'] }[d.stage];
+  const side = [inv ? `<button class="btn ghost" data-iview="${inv.id}">فاکتور</button>` : '', isOpen(d) && S.ord.edit ? '<button class="btn ghost danger" data-ocancel>لغو</button>' : '',
+    !S.ord.edit || d.stage === 'request' ? '<button class="btn ghost" data-osave>ذخیره</button>' : ''].join('');
+  h += `<div class="ed-foot">${side}${next ? `<button class="btn" data-${next[0]}>${next[1]}</button>` : ''}</div>`;
+  $('#sheet .panel').innerHTML = h;
+}
+// The order's details and price are filled in with the product form; it comes back here.
+function openSpec(then) {
+  const d = S.ord.d, sp = d.spec ? JSON.parse(JSON.stringify(d.spec)) : blank();
+  Object.assign(sp, { _added: [], _ready: 0, photos: sp.photos || [] });
+  S.ed = { d: sp, step: then === 'ready' ? 2 : d.spec ? 4 : 0, edit: false, order: true, then, st: orderSettings(S.settings, d) };
+  drawEditor();
+  if (then === 'ready') island('وزن واقعی را وارد کنید؛ قیمت نهایی با قیمت فلز روز بیعانه حساب می‌شود');
+}
+async function saveSpec() {
+  const { _added, _ready, ...spec } = S.ed.d, then = S.ed.then;
+  S.ord.d.spec = spec; S.ed = null;
+  if (then === 'ready') return stageTo('ready');
+  if (S.ord.edit) await commitOrder('مشخصات سفارش را به‌روز کرد');
+  drawOrder();
+}
+// Save the order with its customer; `what` goes to the history.
+async function commitOrder(what) {
+  const o = S.ord.d;
+  const c = await linkCustomer(S.ord.cname, S.ord.cphone);
+  if (c) o.customerId = c.id;
+  await putOrder(o); S.ord.edit = true;
+  logEvent(`${orderNo(o)}${c ? ` (${c.name})` : ''}: ${what}`);
+}
+async function stageTo(stage) {
+  const o = S.ord.d, now = Date.now(), r = orderPrice(o, S.settings);
+  const undo = await snap({ orders: [o.id], invoices: o.invoiceId ? [o.invoiceId] : [] });
+  o.stage = stage; o[stage + 'At'] = now;
+  // The final price follows the real weight; the invoice shows it, the deposit already in.
+  const inv = orderInv(o);
+  if (inv && r.complete && (stage === 'ready')) { inv.items[0].price = r.final; inv.items[0].listPrice = r.final; inv.items[0].weight = o.spec.weight; await putInvoice(inv); }
+  await commitOrder({ making: 'ساخت شروع شد', ready: `آماده شد؛ قیمت نهایی ${plain(r.final || 0)} تومان` }[stage] || STAGE_NAME[stage]);
+  drawOrder(); offerUndo(STAGE_NAME[stage], undo);
+}
+async function takeDeposit() {
+  const o = S.ord.d, r = orderPrice(o, S.settings), dep = suggestDeposit(r, S.settings.rounding || 100000);
+  if (!S.ord.cname.trim()) return island('نام مشتری را بنویسید');
+  if (!r.complete) return island('اول مشخصات و قیمت برآوردی را کامل کنید');
+  const amount = o.deposit || dep.value, now = Date.now();
+  const undo = await snap({ orders: [o.id] });
+  const c = await linkCustomer(S.ord.cname, S.ord.cphone);
+  o.customerId = c.id;
+  o.metal = { silver: S.settings.prices.silver ?? null, gold: S.settings.prices.gold ?? null };
+  o.estimate = r.final; o.deposit = amount; o.stage = 'deposit'; o.depositAt = now;
+  const sp = o.spec, self = supplierOf(S.settings, sp.material) === 'self';
+  const inv = { id: uid(), no: nextNumber(S.invoices), date: now, customer: { name: c.name, phone: c.phone || '' }, customerId: c.id, orderId: o.id,
+    items: [{ title: orderTitle(o), price: r.final, listPrice: r.final, sub: sp.sub, material: sp.material, weight: self ? sp.weight : null, level: sp.level, photo: (sp.photos || [])[0] || null, detail: 'سفارش سفارشی' }],
+    shipping: null, discount: null, paid: amount, note: o.note || '', terms: TERMS };
+  o.invoiceId = inv.id;
+  await putInvoice(inv);
+  await commitOrder(`بیعانه ${plain(amount)} تومان گرفت؛ قیمت فلز قفل شد`);
+  offerUndo('بیعانه ثبت شد؛ فاکتور بیعانه آماده است', async () => { await db.del('invoices', inv.id); await undo(); });
+  await showInvoice(inv.id);
+}
+async function deliverOrder() {
+  const o = S.ord.d, inv = orderInv(o), r = orderPrice(o, S.settings);
+  if (!inv) return island('فاکتور این سفارش پیدا نشد');
+  if (r.complete) { inv.items[0].price = r.final; inv.items[0].listPrice = r.final; }
+  inv.paid = totals({ ...inv, paid: 0 }).total;  // whole amount received; Servin can change it before saving
+  S.ord = null;
+  openInvoice(inv);
+  island('مبلغ کامل گذاشته شد؛ ارسال یا تخفیف را اگر هست وارد کنید و ذخیره بزنید');
+}
+async function cancelOrder() {
+  const o = S.ord.d, inv = orderInv(o), paid = inv ? totals(inv).paid : 0, now = Date.now();
+  const back = refundable(o);
+  if (!confirm(!paid ? 'این سفارش لغو شود؟' : back ? `ساخت شروع نشده؛ ${plain(paid)} تومان بیعانه به مشتری برمی‌گردد. لغو شود؟` : `ساخت شروع شده؛ بیعانه (${plain(paid)} تومان) طبق شرایط برنمی‌گردد و درآمد ثبت می‌شود. لغو شود؟`)) return;
+  const undo = await snap({ orders: [o.id], invoices: inv ? [inv.id] : [] });
+  if (inv && back) { await db.del('invoices', inv.id); S.invoices = S.invoices.filter(i => i.id !== inv.id); o.invoiceId = null; o.refunded = paid; }
+  else if (inv) {
+    // Kept deposit: the invoice becomes a settled sale of exactly that amount.
+    inv.items[0].price = paid; inv.items[0].title = `${orderTitle(o)} (لغو بعد از شروع ساخت)`; inv.discount = null; inv.shipping = null; inv.terms = null; inv.paidAt = now;
+    await putInvoice(inv);
+    o.spentCost = orderPrice(o, S.settings).cost ?? null;
+  }
+  o.stage = 'cancelled'; o.cancelledAt = now;
+  await commitOrder(back ? `لغو شد؛ ${plain(paid)} تومان بیعانه برگشت` : 'لغو شد؛ بیعانه نگه داشته شد');
+  drawOrder(); offerUndo('سفارش لغو شد', undo);
 }
 
 // ---------- settings: grouped like iOS settings ----------
@@ -545,6 +836,8 @@ function openEditor(p, step) {
 }
 async function closeEditor() {
   if (S.ed) for (const id of S.ed.d._added) { await db.del('photos', id); urls.delete(id); }
+  // An order's details were open: back to the order, nothing saved.
+  if (S.ed && S.ed.order) { S.ed = null; return drawOrder(); }
   S.ed = null;
   closeSheet();
   render();
@@ -562,11 +855,13 @@ const priceTag = r => (r.complete ? `${short(r.final)} <small>تومان</small>
 // Help under the workshop invoice: a suggestion from similar products when empty, a warning when a number looks
 // like zeros were left out (e.g. «۱۶۵» for ۱۶۵ میلیون).
 // Cast pieces: our own silver or gold, not a hand-built panel. Their casting is computed from the weight.
-const isCast = d => d.cat && d.cat !== 'panel' && ['silver', 'gold'].includes(d.material) && supplierOf(S.settings, d.material) === 'self';
+// The product form also prices custom orders; an order with a deposit uses that day's metal price.
+const ES = () => (S.ed && S.ed.st) || S.settings;
+const isCast = d => d.cat && d.cat !== 'panel' && ['silver', 'gold'].includes(d.material) && supplierOf(ES(), d.material) === 'self';
 // «کمک برای حساب»: works out a «هزینهٔ ساخت» from casting (weight × fee, cast pieces) + team hours × rate,
 // with the usual hours of the chosen level filled in; one tap copies it into the field.
 function workHelper(d) {
-  const st = S.settings, fee = st.castPerGram, rate = st.teamHourly;
+  const st = ES(), fee = st.castPerGram, rate = st.teamHourly;
   if (!d.cat || supplierOf(st, d.material) === 'workshop') return '';
   const usual = d.level && st.hoursByLevel ? st.hoursByLevel[d.level] : null;
   const hours = d.hours ?? usual;
@@ -583,14 +878,14 @@ function invoiceHint(d) {
   if (d.invoice != null && d.invoice > 0 && d.invoice < 10000) {
     return `${say(`${fmt(d.invoice)} تومان خیلی کم است؛ شاید صفرها جا افتاده.`)} <button class="link" data-fixinv="1000">${say(`${fmt(d.invoice)} هزار`)}</button> <button class="link" data-fixinv="1000000">${say(`${fmt(d.invoice)} میلیون`)}</button>`;
   }
-  const sg = d.invoice == null && supplierOf(S.settings, d.material) === 'workshop' ? suggestInvoice(S.products, d) : null;
+  const sg = d.invoice == null && supplierOf(ES(), d.material) === 'workshop' ? suggestInvoice(S.products, d) : null;
   if (sg) return `${say(`پیشنهاد: ${plain(sg.value)} تومان (از ${sg.n} محصول ${sg.basis})`)} <button class="link" data-usesug="${sg.value}">همین</button>`;
   return 'ریخته‌گری، کار تیم و کارگاه، همه با هم.';
 }
 // A setting the price still needs (level factor, material factor, metal price) can be filled right here,
 // without leaving the product form. Saved to settings and shared with the other phone.
 function inlineFix(d) {
-  const r = price(d, S.settings), out = [];
+  const r = price(d, ES()), out = [];
   for (const m of r.missing) {
     if (m.key.startsWith('factor:')) { const [, f, l] = m.key.split(':'); out.push(field(m.key, `ضریب «${levelOf(l).name}» برای ${FORMULAS[f].name}`, '×', null, 'برای همهٔ محصولات همین فرمول و سطح به کار می‌رود.', true)); }
     else if (m.key === 'markup') out.push(field('markup', 'ضریب متریال', '×', null, 'روی فلزی که خودتان می‌دهید و سنگ.', true));
@@ -603,7 +898,7 @@ function inlineFix(d) {
 
 function drawEditor() {
   const { d, step } = S.ed;
-  const r = price(d, S.settings);
+  const r = price(d, ES());
   const panel = $('#sheet .panel');
   let h = `<div class="ed-top"><button class="x back" data-back aria-label="برگشت">${svg('back')}</button>
     ${step < 4 ? `<div class="ed-price ${r.complete ? 'ok' : ''}"><span>قیمت فروش</span><b>${priceTag(r)}</b></div>` : ''}</div>`;
@@ -615,7 +910,7 @@ function drawEditor() {
   } else if (step === 1) {
     h += chips('level', LEVELS, d.level, true) + `<p class="help">هر سطح ضریب خودش را دارد؛ سطح بالاتر یعنی ارزش طراحی بیشتر.</p>`;
   } else if (step === 2) {
-    const sup = supplierOf(S.settings, d.material);
+    const sup = supplierOf(ES(), d.material);
     h += `<p class="lab2">فلز</p>${chips('material', MATERIALS, d.material)}`;
     if (sup === 'self') h += field('weight', `وزن ${matOf(d.material).name}`, 'گرم', d.weight, 'فلزی که خودتان به کارگاه می‌دهید.', true);
     if (sup === 'workshop') h += `<p class="help">${matOf(d.material).name} را کارگاه می‌دهد؛ هزینه‌اش داخل فاکتور است.</p>`;
@@ -643,7 +938,7 @@ function drawEditor() {
 function priceStory(d, r) {
   if (!r.complete) return '';
   if (r.manualFinal && r.formulaFinal == null) return `<div class="ps"><p class="ps-t">قیمت دستی</p><div class="ps-r"><span>این قیمت را خودتان گذاشته‌اید<small>فرمول هنوز کامل نیست؛ با کامل شدنش، قیمت فرمول کنارش دیده می‌شود.</small></span></div></div>`;
-  const st = S.settings, n = v => `${iso(fmt(v))} تومان`, mt = matOf(d.material), lv = levelOf(d.level);
+  const st = ES(), n = v => `${iso(fmt(v))} تومان`, mt = matOf(d.material), lv = levelOf(d.level);
   const self = supplierOf(st, d.material) === 'self', g = st.prices[d.material];
   const metal = r.material - (d.stone || 0);
   const row = (k, v, note = '') => `<div class="ps-r"><span>${k}${note ? `<small>${note}</small>` : ''}</span><b>${v}</b></div>`;
@@ -685,14 +980,14 @@ function priceStory(d, r) {
 function summary(d, r) {
   const cat = catOf(d.cat), lv = levelOf(d.level), mt = matOf(d.material);
   const ph = d.photos[0] && urls.get(d.photos[0]);
-  const self = supplierOf(S.settings, d.material) === 'self';
+  const self = supplierOf(ES(), d.material) === 'self';
   const rows = [
     [0, 'محصول', [cat && cat.name, d.sub].filter(Boolean).join('، ') || '—'],
     [1, 'سطح کار', lv ? lv.name : '—'],
     [2, 'هزینه‌ها', [mt && mt.name, self && d.weight != null ? `${d.weight} گرم` : '', d.invoice != null ? `هزینهٔ ساخت ${plain(d.invoice)}` : 'هزینهٔ ساخت وارد نشده'].filter(Boolean).join('، ')],
     [3, 'نام و عکس', `${d.title || 'بدون نام'}، ${d.photos.length} عکس`],
   ];
-  let h = `<div class="sum-head">${ph ? `<img src="${ph}" alt="">` : ''}<div><h2>${esc(d.title || d.sub || 'محصول تازه')}</h2>
+  let h = `<div class="sum-head">${ph ? `<img src="${ph}" alt="">` : ''}<div><h2>${esc(d.title || d.sub || (S.ed.order ? 'سفارش' : 'محصول تازه'))}</h2>
     <div class="big">${r.complete ? `${iso(fmt(r.final))} <small>تومان</small>` : '<span class="none">هنوز کامل نیست</span>'}</div></div></div>`;
   if (r.missing.length) h += `<div class="group"><div class="cell col miss"><b>برای قیمت کامل:</b>${r.missing.map(m => `<span>${say(m.text)}</span>`).join('')}</div></div>`;
   h += priceStory(d, r);
@@ -701,6 +996,7 @@ function summary(d, r) {
     ${d.finalPrice ? `<button class="cell" data-clearfinal><span class="sec">برگشت به قیمت فرمول${formula ? say(` (${plain(formula)} تومان)`) : ''}</span></button>` : ''}</div>
     <p class="foot">اگر می‌خواهید این محصول قیمتی جز فرمول داشته باشد. برای یک فروش خاص، قیمت را در خود فاکتور عوض کنید.</p>`;
   h += `<div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}</div>`;
+  if (S.ed.order) return h + `<div class="ed-foot"><button class="btn" data-save>${S.ed.then === 'ready' ? 'ثبت وزن واقعی' : 'ذخیره در سفارش'}</button></div>`;
   h += stockBox(d);
   h += `<div class="ed-foot">${S.ed.edit ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>مشابه</button>${d._ready > 0 && r.complete ? `<button class="btn ghost" data-sell="${d.id}">فاکتور</button>` : ''}` : ''}<button class="btn" data-save>${S.ed.edit ? 'ذخیره' : 'ذخیره در ویترین'}</button></div>`;
   return h;
@@ -731,6 +1027,7 @@ async function compress(file) {
 
 // ---------- save ----------
 async function save() {
+  if (S.ed.order) return saveSpec();
   const d = S.ed.d, r = price(d, S.settings), now = Date.now();
   const prev = S.ed.edit ? S.products.find(x => x.id === d.id) : null;
   const { _added, _ready, ...clean } = d;
@@ -764,7 +1061,7 @@ async function save() {
 async function exportAll() {
   const photos = [];
   for (const ph of await db.all('photos')) photos.push({ id: ph.id, data: await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(ph.blob); }) });
-  const blob = new Blob([JSON.stringify({ app: 'seenzhin', v: 1, at: Date.now(), settings: S.settings, products: S.products, photos })], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'seenzhin', v: 1, at: Date.now(), settings: S.settings, products: S.products, invoices: S.invoices, customers: S.customers, orders: S.orders, photos })], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `seenzhin-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -777,6 +1074,7 @@ async function importAll(file) {
     await db.clear('products'); await db.clear('photos');
     for (const ph of data.photos || []) await db.put('photos', { id: ph.id, blob: await (await fetch(ph.data)).blob() });
     await db.putMany('products', data.products || []);
+    for (const k of ['invoices', 'customers', 'orders']) if (data[k]) { await db.clear(k); await db.putMany(k, data[k]); }
     await db.set('settings', data.settings);
     location.reload();
   } catch { island('این فایل پشتیبان سینژین نیست'); }
@@ -787,6 +1085,7 @@ async function doAct(a) {
   if (a === 'new') return openEditor(null);
   if (a === 'settings') return goTab('settings');
   if (a === 'drift') return openDrift();
+  if (a.startsWith('order:')) { const o = S.orders.find(x => x.id === a.slice(6)); return o && openOrder(o); }
   if (a.startsWith('edit:')) return openEditor(S.products.find(p => p.id === a.slice(5)));
   if (a.startsWith('market:')) {
     const m = a.slice(7);
@@ -809,7 +1108,7 @@ function bind() {
     if ('back' in ds) return goBack();
     if ('refresh' in ds) return refresh(t);
     if ('undo' in ds) { const f = S.undo; S.undo = null; $('#undo').classList.remove('show'); if (f) { await f(); island('برگردانده شد'); } return; }
-    if ('close' in ds) { S.inv = null; S.preview = null; return S.ed ? closeEditor() : closeSheet(); }
+    if ('close' in ds) { S.inv = null; S.preview = null; if (S.ed && S.ed.order) S.ed = null; S.ord = null; S.cust = null; return S.ed ? closeEditor() : (closeSheet(), render()); }
     if ('new' in ds) return openEditor(null);
     if (ds.act) return doAct(ds.act);
     if (ds.filter) { S.filter = ds.filter; return render(); }
@@ -860,6 +1159,37 @@ function bind() {
     if ('logall' in ds) { S.logAll = true; return render(); }
     if ('signout' in ds) { if (confirm('از حساب مشترک روی این گوشی خارج شوید؟ داده‌ها پاک نمی‌شوند.')) { await sync.signOut(); render(); } return; }
     if ('inew' in ds) return openInvoice(null);
+    if (ds.sv) { S.sv = ds.sv; return render(); }
+    if ('onew' in ds) return openOrder(null);
+    if ('cnew' in ds) return openCustomer(null);
+    if (ds.oview) return openOrder(S.orders.find(o => o.id === ds.oview));
+    if (ds.cview) return openCustomer(S.customers.find(c => c.id === ds.cview));
+    if (S.cust && !S.ed) {
+      if ('csave' in ds) return saveCustomer();
+      if ('cinv' in ds) { const c = S.customers.find(x => x.id === S.cust.d.id); return openInvoice(null, null, c); }
+      if ('cord' in ds) { const c = S.customers.find(x => x.id === S.cust.d.id); return openOrder(null, c); }
+      if ('cdel' in ds) {
+        const c = S.cust.d, undo = await snap({ customers: [c.id] });
+        await db.del('customers', c.id); S.customers = S.customers.filter(x => x.id !== c.id);
+        S.cust = null; closeSheet(); render(); logEvent(`مشتری «${c.name}» را حذف کرد`); return offerUndo('مشتری حذف شد', undo);
+      }
+    }
+    if (S.ord && !S.ed) {
+      const o = S.ord.d;
+      if ('ospec' in ds) return openSpec();
+      if (ds.odue != null) { const n = Number(ds.odue); o.due = n ? new Date().setHours(12, 0, 0, 0) + n * 864e5 : null; S.ord.dueN = n || null; return drawOrder(); }
+      if ('osave' in ds) {
+        if (!S.ord.cname.trim() && !o.spec) return island('نام مشتری یا مشخصات سفارش را وارد کنید');
+        const undo = await snap({ orders: [o.id] }), isNew = !S.ord.edit;
+        await commitOrder(isNew ? 'ثبت شد' : 'به‌روز شد');
+        S.ord = null; closeSheet(); S.tab = 'sales'; S.sv = 'ord'; render(); return offerUndo('سفارش ذخیره شد', undo);
+      }
+      if ('odeposit' in ds) return takeDeposit();
+      if ('ostart' in ds) { if (!confirm('از این لحظه بیعانه برنمی‌گردد. ساخت شروع شود؟')) return; return stageTo('making'); }
+      if ('oready' in ds) return openSpec('ready');
+      if ('odeliver' in ds) return deliverOrder();
+      if ('ocancel' in ds) return cancelOrder();
+    }
     if (ds.sell) { const id = ds.sell; await closeEditor(); return openInvoice(null, id); }
     if (ds.iview) return showInvoice(ds.iview);
     if (ds.iedit) { const inv = S.invoices.find(i => i.id === ds.iedit); return openInvoice(inv); }
@@ -927,6 +1257,17 @@ function bind() {
   document.addEventListener('input', e => {
     const el = e.target;
     if (el.dataset.brand) { (S.settings.brand ||= {})[el.dataset.brand] = el.value; clearTimeout(pendingSetting.b); pendingSetting.b = setTimeout(saveSettings, 600); return; }
+    if (S.cust && el.dataset.ctext) { S.cust.d[el.dataset.ctext] = el.value; return; }
+    if (S.ord && !S.ed && (el.dataset.otext || el.dataset.onum)) {
+      const k = el.dataset.otext || el.dataset.onum;
+      if (el.dataset.onum) { const v = parseNum(el.value); if (v != null) el.value = fmt(v); S.ord.d[k] = v; return; }
+      if (k === 'cname' || k === 'cphone') {
+        S.ord[k] = el.value;
+        // Picking a known name fills the phone.
+        if (k === 'cname') { const c = S.customers.find(x => x.name === el.value.trim()); if (c && !S.ord.cphone) { S.ord.cphone = c.phone || ''; const p = $('[data-otext="cphone"]'); if (p) p.value = S.ord.cphone; } }
+      } else S.ord.d[k] = el.value;
+      return;
+    }
     if (S.inv && (el.dataset.itext || el.dataset.inum)) {
       const d = S.inv.d, key = el.dataset.itext || el.dataset.inum;
       let v = el.value;
@@ -948,7 +1289,7 @@ function bind() {
     if (key.startsWith('price:') || key.startsWith('factor:') || key.startsWith('hlevel:') || ['markup', 'cast', 'hourly'].includes(key)) return pendingSetting(key, v);
     if (!S.ed) return;
     S.ed.d[key] = v;
-    const r = price(S.ed.d, S.settings), box = $('.ed-price');
+    const r = price(S.ed.d, ES()), box = $('.ed-price');
     if (box) { box.classList.toggle('ok', r.complete); box.querySelector('b').innerHTML = priceTag(r); }
     const big = $('.sum-head .big'); if (big && r.complete) big.innerHTML = `${iso(fmt(r.final))} <small>تومان</small>`;
   });

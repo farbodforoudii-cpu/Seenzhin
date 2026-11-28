@@ -43,6 +43,17 @@ const USER = 'zz-test-' + Date.now().toString(36), PASS = 'test-pass-123';
   await A.p.click('[data-tab="settings"]'); await A.p.click('[data-syncnow]'); await A.p.waitForTimeout(4000);
   await A.p.click('[data-tab="home"]'); await A.p.waitForTimeout(400);
   console.log('A sees 3 ready:', await A.p.locator('.badge', { hasText: '۳ عدد' }).count());
+  // a customer made on B reaches A
+  await B.p.click('[data-tab="sales"]'); await B.p.click('[data-sv="cust"]'); await B.p.click('[data-cnew] >> nth=0'); await B.p.waitForTimeout(300);
+  await B.p.fill('[data-ctext="name"]', 'مشتری آزمون همگام'); await B.p.dispatchEvent('[data-ctext="name"]', 'input');
+  await B.p.click('[data-csave]'); await B.p.waitForTimeout(4500);
+  const seeCust = async () => { await A.p.click('[data-tab="settings"]'); await A.p.click('[data-syncnow]'); await A.p.waitForTimeout(4000); await A.p.click('[data-tab="sales"]'); await A.p.click('[data-sv="cust"]'); await A.p.waitForTimeout(300); return A.p.locator('.cell', { hasText: 'مشتری آزمون همگام' }).count(); };
+  console.log('A sees customer:', await seeCust());
+  // a phone that ran the old version had skipped customers: after the update it reads them again
+  await A.p.evaluate(async () => { const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => r(q.result); });
+    await new Promise(r => { const t = db.transaction(['customers', 'kv'], 'readwrite'); t.objectStore('customers').clear(); t.objectStore('kv').put(1, 'syncKinds'); t.oncomplete = r; }); });
+  await A.p.reload(); await A.p.waitForTimeout(1500);
+  console.log('old phone recovers customer:', await seeCust());
   await A.p.click('[data-tab="settings"]'); await A.p.waitForTimeout(300);
   await A.p.screenshot({ path: (process.env.OUT || '/tmp/seenzhin-shots/') + 'sync-settings.png' });
   console.log('user', USER, 'errors', A.errs, B.errs);
