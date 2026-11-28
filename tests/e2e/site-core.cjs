@@ -46,8 +46,11 @@ const DEVICES = [
     ok(await pg.locator('.card').count() === 8, `${tag} shop: all 8`);
     await pg.click('.chip:has-text("تابلوی نقره")'); await pg.waitForTimeout(150);
     ok(await pg.locator('.card').count() === 1, `${tag} shop: category filter`);
-    await pg.click('.chip:has-text("همه")'); await pg.click('.chip:has-text("فقط موجود")'); await pg.waitForTimeout(150);
+    await pg.click('.chip:has-text("همه")'); await pg.click('.seg a:has-text("موجود")'); await pg.waitForTimeout(150);
     ok(await pg.locator('.card').count() === 5, `${tag} shop: only available → 5`);
+    await pg.click('.seg a:has-text("سفارشی")'); await pg.waitForTimeout(150);
+    ok(await pg.locator('.card').count() === 3, `${tag} shop: made to order → 3`);
+    await pg.click('.seg a:has-text("موجود")'); await pg.waitForTimeout(150);
     await pg.selectOption('select[name=sort]', 'dear'); await pg.waitForTimeout(150);
     ok((await pg.locator('.card-title').first().innerText()).includes('تابلو'), `${tag} shop: most expensive first`);
     await pg.fill('input[name=q]', 'باران'); await pg.waitForTimeout(400);
@@ -59,13 +62,17 @@ const DEVICES = [
 
     // product
     await pg.click('.card-link >> nth=0'); await pg.waitForSelector('.pdp');
-    ok(/تومان/.test(await pg.locator('.price.big').innerText()), `${tag} product: exact price`);
+    await pg.waitForTimeout(1100);
+    ok((await pg.locator('.price.big').innerText()).includes('۱۴٬۵۰۰٬۰۰۰'), `${tag} product: price rolls to the exact value`);
+    const phone = (dev.viewport || {}).width < 760;
+    ok(await pg.isVisible('.buybar') === phone, `${tag} product: bottom order bar ${phone ? 'shown' : 'hidden'}`);
+    if (phone) ok(/سفارش در واتس‌اپ/.test(await pg.locator('.buybar').innerText()), `${tag} product: bar names the action`);
     ok(await pg.locator('.thumb').count() === 3, `${tag} product: 3 photos`);
     await pg.click('.thumb >> nth=2'); await pg.waitForTimeout(700);
     ok(await pg.locator('.thumb.on').getAttribute('data-slide') === '2', `${tag} product: thumbnail moves gallery`);
     const wa = await pg.getAttribute('a[href^="https://wa.me/98912"]', 'href');
     ok(wa && decodeURIComponent(wa).includes('کد محصول: s01'), `${tag} product: WhatsApp message has product code`);
-    ok(await pg.isVisible('[data-dm]'), `${tag} product: Instagram button`);
+    ok(await pg.locator('[data-dm]').count() >= 1, `${tag} product: Instagram button`);
     ok(await pg.locator('script#ld').count() === 1, `${tag} product: structured data for search engines`);
     await pg.click('.info [data-save]'); await pg.waitForTimeout(150);
     ok(await pg.locator('#savedCount').innerText() === '۱', `${tag} product: saved, header shows ۱`);
@@ -80,7 +87,8 @@ const DEVICES = [
     await pg.click('[data-custom] button[type=submit]'); await pg.waitForTimeout(200);
     ok(await pg.locator('.err').count() >= 3, `${tag} custom: errors shown`);
     await noOverflow('custom-errors'); await shot('custom-errors');
-    await pg.click('.radio:has-text("جواهر")'); await pg.click('.radio:has-text("نقره")');
+    await pg.click('.radio:has(input[name=kind][value="جواهر"])'); await pg.click('.radio:has(input[name=metal][value="نقره"])');
+    ok((await pg.locator('[data-cta]').innerText()) === 'درخواست جواهر نقره', `${tag} custom: button names the request`);
     await pg.fill('textarea[name=idea]', 'گوشوارهٔ نقره با نقش انار');
     await pg.fill('input[name=name]', 'آزمایش'); await pg.fill('input[name=phone]', '۰۹۱۲۰۰۰۰۰۰۰');
     await pg.click('[data-custom] button[type=submit]'); await pg.waitForSelector('.done');

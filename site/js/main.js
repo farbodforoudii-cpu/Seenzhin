@@ -1,7 +1,7 @@
 // Seenzhin website: router, pages and events. Rules live in catalog.js (tested in Node).
 import {
   normalize, catalogOk, filterItems, categoriesOf, related, specs, orderMessage, customRequest, waLink, igLink, tgLink,
-  parseRoute, shopHash, shortPrice, toman, esc, faDigits, AVAIL, catName,
+  parseRoute, shopHash, shortPrice, toman, esc, faDigits, fmt, fmtDec, iso, AVAIL, catName,
   CUSTOM_KINDS, CUSTOM_METALS, CUSTOM_BUDGETS,
 } from './catalog.js';
 
@@ -93,7 +93,7 @@ function home() {
       <div class="hero-art" aria-hidden="true">${LOGO}</div>
     </section>
     <section class="section">
-      <div class="section-head"><h2>آثار</h2>
+      <div class="section-head"><h2 class="section-title">آثار</h2>
         ${cats.length > 1 ? `<nav class="catlinks" aria-label="دسته‌ها">${cats.map(c => `<a href="${shopHash({ cat: c.slug })}">${esc(c.name)}</a>`).join('')}</nav>` : ''}</div>
       ${works.length ? grid(works) : empty('هنوز اثری روی سایت نیست.')}
       ${S.items.length > works.length ? `<p class="more-link"><a class="btn" href="#/shop">همهٔ آثار</a></p>` : ''}
@@ -109,16 +109,20 @@ function shop(q) {
   const cats = categoriesOf(S.items);
   const list = filterItems(S.items, q);
   const chip = (label, next, on) => `<a class="chip ${on ? 'on' : ''}" href="${shopHash({ ...q, ...next })}" ${on ? 'aria-current="true"' : ''}>${label}</a>`;
+  const seg = [['', 'همه'], ['available', 'موجود'], ['made-to-order', 'سفارشی']]
+    .map(([v, t]) => `<a href="${shopHash({ ...q, avail: v })}" class="${(q.avail || '') === v ? 'on' : ''}" ${(q.avail || '') === v ? 'aria-current="true"' : ''}>${t}</a>`).join('');
   return `${crumbs([['خانه', '#/'], [q.cat ? catName(q.cat) : 'همهٔ آثار']])}
     <h1>${esc(q.cat ? catName(q.cat) : 'همهٔ آثار')}</h1>
     <form class="tools" data-shopform role="search">
       <label class="search">${icon('search')}<input type="search" name="q" value="${esc(q.q || '')}" placeholder="جستجو در آثار" aria-label="جستجو در آثار" enterkeyhint="search"></label>
-      <label class="select"><span class="sr">ترتیب</span><select name="sort" aria-label="ترتیب">
+    </form>
+    ${cats.length > 1 ? `<div class="chips">${chip('همه', { cat: '' }, !q.cat)}${cats.map(c => chip(esc(c.name), { cat: c.slug }, q.cat === c.slug)).join('')}</div>` : ''}
+    <div class="bar">
+      <nav class="seg" aria-label="وضعیت">${seg}</nav>
+      <label class="select"><span class="sr">ترتیب</span><select name="sort" aria-label="ترتیب" form="sortform" data-sort>
         ${[['new', 'تازه‌ترین'], ['cheap', 'ارزان‌ترین'], ['dear', 'گران‌ترین']].map(([v, t]) => `<option value="${v}" ${(q.sort || 'new') === v ? 'selected' : ''}>${t}</option>`).join('')}
       </select></label>
-    </form>
-    <div class="chips" role="list">${chip('همه', { cat: '' }, !q.cat)}${cats.map(c => chip(esc(c.name), { cat: c.slug }, q.cat === c.slug)).join('')}
-      <span class="chips-sep"></span>${chip('فقط موجود', { avail: q.avail ? '' : 'available' }, !!q.avail)}</div>
+    </div>
     <p class="count" aria-live="polite">${faDigits(list.length)} اثر</p>
     ${list.length ? grid(list) : empty('اثری با این انتخاب پیدا نشد.', `<a class="btn" href="#/shop">پاک کردن فیلترها</a>`)}`;
 }
@@ -127,9 +131,15 @@ function product(id) {
   const p = S.items.find(x => x.id === id);
   if (!p) return notfound('این اثر روی سایت نیست؛ شاید فروخته شده یا برداشته شده است.');
   signal('view', p.id);
-  const url = location.href;
+  const msg = orderMessage(p, location.href);
   const saved = S.saved.has(p.id);
   const rel = related(S.items, p);
+  const meta = [p.type || p.category, p.material === 'نقره' ? 'نقرهٔ ۹۲۵' : p.material, p.weight ? `${iso(fmtDec(p.weight))} گرم` : ''].filter(Boolean).join('، ');
+  const wa = waLink(S.site.whatsapp, msg);
+  // One main action, named for what it does; on phones it sits in a bar with the price (always in reach).
+  const main = wa ? `<a class="btn primary" href="${wa}" target="_blank" rel="noopener" data-signal="ask">${icon('chat')}<span>سفارش در واتس‌اپ</span></a>`
+    : S.site.instagram ? `<button class="btn primary" data-dm="${esc(msg)}">${icon('insta')}<span>سفارش در اینستاگرام</span></button>` : '';
+  const second = wa && S.site.instagram ? `<button class="btn" data-dm="${esc(msg)}">${icon('insta')}<span>پیام در اینستاگرام</span></button>` : '';
   return `${crumbs([['خانه', '#/'], [p.category || 'آثار', shopHash({ cat: p.category ? (categoriesOf(S.items).find(c => c.name === p.category) || {}).slug : '' })], [p.title]])}
     <div class="pdp">
       <div class="gallery" data-gallery>
@@ -138,22 +148,24 @@ function product(id) {
       </div>
       <div class="info">
         <h1>${esc(p.title)}</h1>
-        <p class="price big">${p.price ? toman(p.price) : 'تماس بگیرید'}</p>
+        ${meta ? `<p class="meta">${meta}</p>` : ''}
+        <p class="price big" ${p.price ? `data-roll="${p.price}"` : ''}>${p.price ? toman(p.price) : 'تماس بگیرید'}</p>
         <p class="avail ${p.availability}"><i aria-hidden="true"></i>${AVAIL[p.availability].name}<span>${AVAIL[p.availability].hint}</span></p>
         ${p.desc ? `<p class="desc">${esc(p.desc)}</p>` : ''}
-        <dl class="specs">${specs(p).map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
-        ${contactButtons(orderMessage(p, url))}
+        <div class="actions buy">${main}${second}</div>
         <div class="actions small">
           <button class="btn ghost save-btn ${saved ? 'on' : ''}" data-save="${esc(p.id)}" aria-pressed="${saved}">${icon('heart')}<span>${saved ? 'ذخیره شد' : 'ذخیره'}</span></button>
           <button class="btn ghost" data-share>${icon('share')}<span>اشتراک</span></button>
         </div>
-        <p class="note">قیمت با نرخ روز ${p.material ? esc(p.material) : 'فلز'} تنظیم می‌شود و هنگام سفارش تأیید می‌شود. هزینهٔ ارسال جداست.</p>
-        <details class="more"><summary>ارسال، بازگشت و نگهداری</summary>
+        <details class="more"><summary><span>جزئیات، ارسال و نگهداری</span></summary>
+          <dl class="specs">${specs(p).map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+          <p>قیمت با نرخ روز ${p.material ? esc(p.material) : 'فلز'} تنظیم می‌شود و هنگام سفارش تأیید می‌شود. هزینهٔ ارسال جداست.</p>
           <p>${esc(S.site.shipping || 'ارسال بیمه‌شده به سراسر ایران. زمان و هزینهٔ ارسال در پیام اعلام می‌شود.')}</p>
-          <p><a href="#/care">راهنمای نگهداری</a></p></details>
+          <p><a class="link" href="#/care">راهنمای نگهداری</a></p></details>
       </div>
     </div>
-    ${rel.length ? `<section class="block"><h2>آثار دیگر</h2>${grid(rel)}</section>` : ''}`;
+    ${main ? `<div class="buybar" role="region" aria-label="سفارش"><span class="price">${p.price ? shortPrice(p.price) : 'تماس بگیرید'}</span>${main}</div>` : ''}
+    ${rel.length ? `<section class="section"><h2 class="section-title">آثار دیگر</h2>${grid(rel)}</section>` : ''}`;
 }
 
 function custom() {
@@ -170,7 +182,7 @@ function custom() {
       <li><b>ساخت</b><span>بیعانه فقط پیش از شروع ساخت برمی‌گردد.</span></li>
       <li><b>تحویل و تسویه</b><span>قیمت نهایی با وزن واقعی قطعه.</span></li>
     </ol>
-    ${result ? `<div class="done" role="status"><h2>پیام آماده است</h2><p>با یکی از راه‌های زیر بفرستید.</p><pre class="msg">${esc(result)}</pre>${contactButtons(result)}<button class="btn ghost" data-newcustom>ویرایش درخواست</button></div>` : `
+    ${result ? `<div class="done" role="status"><div class="burst" aria-hidden="true">${mark()}</div><h2>پیام آماده است</h2><p>با یکی از راه‌های زیر بفرستید.</p><pre class="msg">${esc(result)}</pre>${contactButtons(result)}<button class="btn ghost" data-newcustom>ویرایش درخواست</button></div>` : `
     <form class="form" data-custom novalidate>
       <fieldset><legend>چه چیزی بسازیم؟</legend>${radios('kind', CUSTOM_KINDS)}${err('kind')}</fieldset>
       <fieldset><legend>فلز</legend>${radios('metal', CUSTOM_METALS)}</fieldset>
@@ -183,8 +195,15 @@ function custom() {
         <label class="field"><span>اینستاگرام (اختیاری)</span><input name="insta" dir="ltr" autocapitalize="off" value="${esc(f.insta || '')}" placeholder="@"></label>
       </div>
       <p class="muted">عکس نمونه را بعد از ارسال پیام، در همان گفتگو بفرستید.</p>
-      <button class="btn primary wide" type="submit">آماده کردن پیام</button>
+      <div class="submitbar"><button class="btn primary wide" type="submit" data-cta>${ctaLabel(f)}</button></div>
     </form>`}`;
+}
+
+// The button says what will be asked for, built from the choices so far.
+function ctaLabel(f) {
+  if (!f.kind) return 'آماده کردن پیام';
+  const metal = f.metal && f.metal !== 'هنوز نمی‌دانم' ? ' ' + f.metal : '';
+  return `درخواست ${f.kind}${metal}`;
 }
 
 function saved() {
@@ -248,6 +267,7 @@ function render() {
   const key = r.page + (r.id || '') + (r.page === 'shop' ? JSON.stringify({ ...r.query, q: '' }) : '');
   if (key !== lastPage) { if (r.page !== 'shop' || !lastPage.startsWith('shop')) window.scrollTo(0, 0); lastPage = key; }
   bindGallery();
+  rollPrices();
   closeMenu();
 }
 
@@ -261,6 +281,20 @@ function setProductMeta(p) {
     offers: p.price ? { '@type': 'Offer', price: p.price * 10, priceCurrency: 'IRR',
       availability: p.availability === 'available' ? 'https://schema.org/InStock' : 'https://schema.org/PreOrder' } : undefined });
   document.head.appendChild(el);
+}
+
+// ---------- number roll: the price counts up once when a product opens ----------
+function rollPrices() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('[data-roll]').forEach(el => {
+    const to = +el.dataset.roll, t0 = performance.now(), dur = 900;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 4);
+      el.textContent = `${iso(fmt(Math.round(to * e / 1000) * 1000))} تومان`;
+      if (k < 1) requestAnimationFrame(step); else el.textContent = toman(to);
+    };
+    requestAnimationFrame(step);
+  });
 }
 
 // ---------- gallery: swipe (scroll snap) + thumbnails ----------
@@ -340,6 +374,7 @@ document.addEventListener('submit', e => {
   }
 });
 document.addEventListener('change', async e => {
+  if (e.target.matches('[data-sort]')) { const q = { ...parseRoute(location.hash).query, sort: e.target.value }; history.replaceState(null, '', shopHash(q)); render(); return; }
   if (e.target.matches('[data-previewfile]')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     try {
@@ -353,7 +388,8 @@ document.addEventListener('change', async e => {
 let qT;
 document.addEventListener('input', e => {
   const f = e.target.closest('[data-shopform]'); if (f && e.target.name === 'q') { clearTimeout(qT); qT = setTimeout(() => applyShopForm(f, true), 250); }
-  const c = e.target.closest('[data-custom]'); if (c) { const d = Object.fromEntries(new FormData(c)); store.set('custom', d); S.form = { ...S.form, ...d }; }
+  const c = e.target.closest('[data-custom]');
+  if (c) { const d = Object.fromEntries(new FormData(c)); store.set('custom', d); S.form = { ...S.form, ...d }; const b = $('[data-cta]', c); if (b) b.textContent = ctaLabel(d); }
 });
 function applyShopForm(f, keepFocus) {
   const q = { ...parseRoute(location.hash).query, ...Object.fromEntries(new FormData(f)) };
