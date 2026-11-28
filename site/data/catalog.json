@@ -1,0 +1,196 @@
+{
+ "app": "seenzhin",
+ "kind": "catalog",
+ "v": 1,
+ "at": "2026-11-28T13:27:48.869Z",
+ "currency": "IRT",
+ "items": [
+  {
+   "id": "mwz7b9jke9kkd8",
+   "title": "چشم و اشک",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 8,
+   "price": 19000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz7aq5ostlnna",
+     "url": "img/p/mwz7aq5ostlnna.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz4l1ock9gmu8",
+   "title": "پر پرواز",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 7,
+   "price": 11000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz4eznklcd3ho",
+     "url": "img/p/mwz4eznklcd3ho.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz4d86xhlf1vo",
+   "title": "گل سینه بهار",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "سنجاق",
+   "material": "نقره",
+   "weight": 20,
+   "price": 33000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz4dnq97h3nav",
+     "url": "img/p/mwz4dnq97h3nav.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz47nvj83frzj",
+   "title": "قلب",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 8,
+   "price": 11000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz4b68ow8paul",
+     "url": "img/p/mwz4b68ow8paul.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz46wlapf4psp",
+   "title": "شکوفه",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 10,
+   "price": 12000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz46o0azksuc1",
+     "url": "img/p/mwz46o0azksuc1.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz3z90j16voj0",
+   "title": "پاپیون و قلب",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 7,
+   "price": 13000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz3z0utxsomn8",
+     "url": "img/p/mwz3z0utxsomn8.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz3y49xxzpxpq",
+   "title": "Dantel",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 13,
+   "price": 22000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz3y1jalbp63o",
+     "url": "img/p/mwz3y1jalbp63o.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz3xi2h1p52pj",
+   "title": "اشک",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 22,
+   "price": 25000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz3xavzo88cit",
+     "url": "img/p/mwz3xavzo88cit.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz3tmrh920pod",
+   "title": "تاجی",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 14,
+   "price": 21000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz3t078imqnsa",
+     "url": "img/p/mwz3t078imqnsa.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz3qovgle0mmm",
+   "title": "قو",
+   "desc": "",
+   "category": "تندیس و مجسمه",
+   "type": "مجسمه",
+   "material": "برنز",
+   "weight": null,
+   "price": 54000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz3qjw6ivpuhf",
+     "url": "img/p/mwz3qjw6ivpuhf.jpg"
+    }
+   ]
+  },
+  {
+   "id": "mwz3meanc2pye3",
+   "title": "تابلو ایران",
+   "desc": "",
+   "category": "تابلوی نقره",
+   "type": "بزرگ",
+   "material": "نقره",
+   "weight": 100,
+   "price": 128000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "mwz3m850dnoeeg",
+     "url": "img/p/mwz3m850dnoeeg.jpg"
+    }
+   ]
+  }
+ ]
+}

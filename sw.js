@@ -21,6 +21,8 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // Live market prices (hesab-man's feed) must never come from this app's cache.
   if (url.pathname.endsWith('/data/prices.json')) return;
+  // The public website (site/) is a separate product with its own caching; never serve it from the app's cache.
+  if (url.pathname.includes('/site/')) return;
   e.respondWith(caches.open(VERSION).then(async cache => {
     const hit = await cache.match(e.request, { ignoreSearch: true });
     const net = fetch(e.request).then(res => { if (res.ok) cache.put(e.request, res.clone()); return res; }).catch(() => hit);

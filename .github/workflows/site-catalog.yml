@@ -1,0 +1,36 @@
+name: site-catalog
+# The website follows the app: every 15 minutes, products marked «روی سایت نشان بده» (approved price, public fields,
+# photos) are read from the server function seenzhin_site_catalog, passed through the app's own catalog rules
+# (site/tools/sync-catalog.mjs) and committed only when something public changed. GitHub Pages then republishes.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [claude/tender-fermi-pp01n2]
+    paths: [site/tools/**, .github/workflows/site-catalog.yml]
+permissions:
+  contents: write
+concurrency:
+  group: site-catalog-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read the app's public catalog and apply the app's rules
+        run: node site/tools/sync-catalog.mjs
+      - name: Check the catalog (public fields only)
+        run: node tests/site-core.test.mjs
+      - name: Commit when something changed
+        run: |
+          git config user.name "seenzhin-catalog-bot"
+          git config user.email "seenzhin-catalog-bot@users.noreply.github.com"
+          git add -A site/data/catalog.json site/img/p
+          git diff --cached --quiet && { echo "no change"; exit 0; }
+          git commit -m "Site catalog: update from the app"
+          git push

@@ -1,0 +1,203 @@
+{
+ "app": "seenzhin",
+ "kind": "catalog",
+ "v": 1,
+ "at": "2026-11-28T09:00:00.000Z",
+ "currency": "IRT",
+ "sample": true,
+ "note": "Sample data for building the site. Not real products or prices.",
+ "items": [
+  {
+   "id": "s01",
+   "title": "گوشوارهٔ نمونهٔ ماه",
+   "desc": "گوشوارهٔ آویز نقره با پرداخت مات؛ متن نمونه برای آزمایش سایت.",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 9.5,
+   "price": 14500000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "s01-1",
+     "url": "img/sample/s01-1.svg"
+    },
+    {
+     "id": "s01-2",
+     "url": "img/sample/s01-2.svg"
+    },
+    {
+     "id": "s01-3",
+     "url": "img/sample/s01-3.svg"
+    }
+   ]
+  },
+  {
+   "id": "s02",
+   "title": "گوشوارهٔ نمونهٔ باران",
+   "desc": "قطره‌های نقره که با حرکت سر تکان می‌خورند؛ متن نمونه.",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 12,
+   "price": 18200000,
+   "availability": "made-to-order",
+   "photos": [
+    {
+     "id": "s02-1",
+     "url": "img/sample/s02-1.svg"
+    },
+    {
+     "id": "s02-2",
+     "url": "img/sample/s02-2.svg"
+    },
+    {
+     "id": "s02-3",
+     "url": "img/sample/s02-3.svg"
+    }
+   ]
+  },
+  {
+   "id": "s03",
+   "title": "گوشوارهٔ نمونهٔ برگ",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 7,
+   "price": 11800000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "s03-1",
+     "url": "img/sample/s03-1.svg"
+    }
+   ]
+  },
+  {
+   "id": "s04",
+   "title": "انگشتر نمونهٔ نگین سبز",
+   "desc": "انگشتر نقره با سنگ سبز؛ متن نمونه.",
+   "category": "جواهرات",
+   "type": "انگشتر",
+   "material": "نقره",
+   "weight": 8,
+   "price": 12600000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "s04-1",
+     "url": "img/sample/s04-1.svg"
+    },
+    {
+     "id": "s04-2",
+     "url": "img/sample/s04-2.svg"
+    },
+    {
+     "id": "s04-3",
+     "url": "img/sample/s04-3.svg"
+    }
+   ]
+  },
+  {
+   "id": "s05",
+   "title": "سنجاق نمونهٔ گل",
+   "desc": "گل‌سینهٔ نقره، پرکار و تک؛ متن نمونه.",
+   "category": "جواهرات",
+   "type": "سنجاق",
+   "material": "نقره",
+   "weight": 18,
+   "price": 29500000,
+   "availability": "made-to-order",
+   "photos": [
+    {
+     "id": "s05-1",
+     "url": "img/sample/s05-1.svg"
+    },
+    {
+     "id": "s05-2",
+     "url": "img/sample/s05-2.svg"
+    },
+    {
+     "id": "s05-3",
+     "url": "img/sample/s05-3.svg"
+    }
+   ]
+  },
+  {
+   "id": "s06",
+   "title": "تابلوی نمونهٔ کوه",
+   "desc": "تابلوی نقرهٔ برجسته روی قاب چوب؛ متن نمونه.",
+   "category": "تابلوی نقره",
+   "type": "بزرگ",
+   "material": "نقره",
+   "weight": 95,
+   "price": 118000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "s06-1",
+     "url": "img/sample/s06-1.svg"
+    },
+    {
+     "id": "s06-2",
+     "url": "img/sample/s06-2.svg"
+    },
+    {
+     "id": "s06-3",
+     "url": "img/sample/s06-3.svg"
+    }
+   ]
+  },
+  {
+   "id": "s07",
+   "title": "تندیس نمونهٔ پرنده",
+   "desc": "مجسمهٔ برنز با پایهٔ سنگی؛ متن نمونه.",
+   "category": "تندیس و مجسمه",
+   "type": "مجسمه",
+   "material": "برنز",
+   "weight": null,
+   "price": 49000000,
+   "availability": "made-to-order",
+   "photos": [
+    {
+     "id": "s07-1",
+     "url": "img/sample/s07-1.svg"
+    },
+    {
+     "id": "s07-2",
+     "url": "img/sample/s07-2.svg"
+    },
+    {
+     "id": "s07-3",
+     "url": "img/sample/s07-3.svg"
+    }
+   ]
+  },
+  {
+   "id": "s08",
+   "title": "گوشوارهٔ نمونهٔ ستاره",
+   "desc": "",
+   "category": "جواهرات",
+   "type": "گوشواره",
+   "material": "نقره",
+   "weight": 10,
+   "price": 16000000,
+   "availability": "available",
+   "photos": [
+    {
+     "id": "s08-1",
+     "url": "img/sample/s08-1.svg"
+    },
+    {
+     "id": "s08-2",
+     "url": "img/sample/s08-2.svg"
+    },
+    {
+     "id": "s08-3",
+     "url": "img/sample/s08-3.svg"
+    }
+   ]
+  }
+ ]
+}
