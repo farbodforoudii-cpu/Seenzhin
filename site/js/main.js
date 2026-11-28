@@ -51,12 +51,12 @@ function card(p) {
   const saved = S.saved.has(p.id);
   return `<article class="card">
     <a class="card-link" href="#/p/${encodeURIComponent(p.id)}">
-      <span class="card-media">${photo(p, 0, 'card-img')}${p.photos[1] ? photo(p, 1, 'card-img alt') : ''}</span>
+      <span class="card-media">${photo(p, 0, 'card-img')}${p.photos[1] ? photo(p, 1, 'card-img alt') : ''}
+        ${p.availability === 'made-to-order' ? `<span class="tag">سفارشی</span>` : ''}</span>
       <span class="card-body">
         <span class="card-title">${esc(p.title)}</span>
         <span class="card-meta">${esc([p.type || p.category, p.material].filter(Boolean).join('، '))}</span>
-        <span class="card-foot"><span class="price">${p.price ? shortPrice(p.price) : 'تماس بگیرید'}</span>
-          <span class="badge ${p.availability}">${AVAIL[p.availability].name}</span></span>
+        <span class="price">${p.price ? shortPrice(p.price) : 'تماس بگیرید'}</span>
       </span>
     </a>
     <button class="save ${saved ? 'on' : ''}" data-save="${esc(p.id)}" aria-pressed="${saved}" aria-label="${saved ? 'حذف از ذخیره‌ها' : 'ذخیره'}">${icon('heart')}</button>
@@ -77,24 +77,32 @@ function contactButtons(text, { compact = false } = {}) {
 const crumbs = list => `<nav class="crumbs" aria-label="مسیر">${list.map(([t, h]) => h ? `<a href="${h}">${esc(t)}</a>` : `<span aria-current="page">${esc(t)}</span>`).join('<span class="sep">/</span>')}</nav>`;
 
 // ---------- pages ----------
+// The sun of the Seenzhin logo, drawn like silver wire. The one moving thing on the page.
+const SUN = `<svg class="sun" viewBox="0 0 400 400" aria-hidden="true">
+  <g class="rays">${Array.from({ length: 24 }, (_, i) => `<line pathLength="1" x1="200" y1="${i % 2 ? 58 : 30}" x2="200" y2="${i % 2 ? 104 : 112}" transform="rotate(${i * 15} 200 200)" style="--i:${i}"/>`).join('')}</g>
+  <circle pathLength="1" class="core" cx="200" cy="200" r="62"/></svg>`;
+
 function home() {
   const cats = categoriesOf(S.items);
-  const featured = filterItems(S.items, {}).sort((a, b) => (b.availability === 'available') - (a.availability === 'available')).slice(0, 8);
+  const works = filterItems(S.items, {}).sort((a, b) => (b.availability === 'available') - (a.availability === 'available')).slice(0, 8);
   return `<section class="hero">
       <div class="hero-text">
-        <p class="kicker">${esc(S.site.tagline || 'HANDCRAFTED FOR SELF & SPACE')}</p>
-        <h1>هر قطعه، یک‌بار ساخته می‌شود.</h1>
-        <p class="lead">جواهر نقره، تابلو و تندیس دست‌ساز؛ طراحی سروین، ساخته‌شده با دست.</p>
-        <div class="actions"><a class="btn primary" href="#/shop">دیدن آثار</a><a class="btn" href="#/custom">سفارش اختصاصی</a></div>
+        <h1>هر قطعه،<br>یک‌بار ساخته می‌شود.</h1>
+        <p class="lead">جواهر، تابلو و تندیس نقره؛ دست‌ساز در کارگاه سینژین.</p>
+        <div class="actions"><a class="btn primary" href="#/shop">دیدن آثار</a><a class="link" href="#/custom">سفارش اختصاصی</a></div>
       </div>
-      <div class="hero-media">${featured[0] ? photo(featured[0], 0, 'hero-img') : ''}</div>
+      <div class="hero-art">${SUN}</div>
     </section>
-    ${cats.length ? `<section class="block"><h2>دسته‌ها</h2><div class="cats">${cats.map(c => `<a class="cat" href="${shopHash({ cat: c.slug })}"><b>${esc(c.name)}</b><small>${faDigits(c.count)} اثر</small></a>`).join('')}</div></section>` : ''}
-    <section class="block"><div class="block-head"><h2>آثار تازه</h2><a href="#/shop">همه ${icon('arrow')}</a></div>${featured.length ? grid(featured) : empty('هنوز اثری روی سایت نیست.')}</section>
-    <section class="block band">
-      <h2>چیزی را که در ذهن دارید بسازیم</h2>
-      <p>جواهر، تابلو یا تندیس اختصاصی با نقره، طلا یا برنز. طرح را بگویید؛ قیمت برآوردی و زمان ساخت را اعلام می‌کنیم.</p>
-      <a class="btn primary" href="#/custom">شروع سفارش اختصاصی</a>
+    <section class="section">
+      <div class="section-head"><h2>آثار</h2>
+        ${cats.length > 1 ? `<nav class="catlinks" aria-label="دسته‌ها">${cats.map(c => `<a href="${shopHash({ cat: c.slug })}">${esc(c.name)}</a>`).join('')}</nav>` : ''}</div>
+      ${works.length ? grid(works) : empty('هنوز اثری روی سایت نیست.')}
+      ${S.items.length > works.length ? `<p class="more-link"><a class="btn" href="#/shop">همهٔ آثار</a></p>` : ''}
+    </section>
+    <section class="section closing">
+      <h2>طرحی در ذهن دارید؟</h2>
+      <p>سینژین آن را با نقره، طلا یا برنز برایتان می‌سازد.</p>
+      <a class="btn" href="#/custom">سفارش اختصاصی</a>
     </section>`;
 }
 
@@ -132,7 +140,7 @@ function product(id) {
       <div class="info">
         <h1>${esc(p.title)}</h1>
         <p class="price big">${p.price ? toman(p.price) : 'تماس بگیرید'}</p>
-        <p class="badge ${p.availability}">${AVAIL[p.availability].name}<span>${AVAIL[p.availability].hint}</span></p>
+        <p class="avail ${p.availability}"><i aria-hidden="true"></i>${AVAIL[p.availability].name}<span>${AVAIL[p.availability].hint}</span></p>
         ${p.desc ? `<p class="desc">${esc(p.desc)}</p>` : ''}
         <dl class="specs">${specs(p).map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
         ${contactButtons(orderMessage(p, url))}
@@ -156,9 +164,9 @@ function custom() {
   const result = S.form._message;
   return `${crumbs([['خانه', '#/'], ['سفارش اختصاصی']])}
     <h1>سفارش اختصاصی</h1>
-    <p class="lead">طرح را بگویید؛ سروین آن را بررسی می‌کند و قیمت برآوردی و زمان ساخت را اعلام می‌کند.</p>
+    <p class="lead">طرح را بگویید؛ سینژین قیمت برآوردی و زمان ساخت را اعلام می‌کند.</p>
     <ol class="steps">
-      <li><b>طرح و برآورد</b><span>گفتگو دربارهٔ طرح، فلز و اندازه؛ قیمت برآوردی.</span></li>
+      <li><b>طرح و برآورد</b><span>دربارهٔ طرح، فلز و اندازه گفتگو می‌کنیم و قیمت برآوردی را می‌گوییم.</span></li>
       <li><b>بیعانه</b><span>با پرداخت بیعانه، قیمت فلز همان روز ثابت می‌شود.</span></li>
       <li><b>ساخت</b><span>بیعانه فقط پیش از شروع ساخت برمی‌گردد.</span></li>
       <li><b>تحویل و تسویه</b><span>قیمت نهایی با وزن واقعی قطعه.</span></li>
@@ -188,7 +196,7 @@ function saved() {
 
 function textPage(title, body) { return `${crumbs([['خانه', '#/'], [title]])}<article class="prose"><h1>${title}</h1>${body}</article>`; }
 const about = () => textPage('دربارهٔ سینژین', `<p class="lead">${esc(S.site.motto || 'seen for vision, zhin for life')}</p>
-  <p>سینژین برندی دست‌ساز است: جواهر نقره، تابلوی نقره، تندیس و اشیای دست‌ساز. طراحی هر قطعه با سروین است و پرداخت، لحیم و مونتاژ با دست تیم سینژین انجام می‌شود.</p>
+  <p>سینژین برندی دست‌ساز است: جواهر نقره، تابلوی نقره، تندیس و اشیای دست‌ساز. هر قطعه در سینژین طراحی می‌شود و پرداخت، لحیم و مونتاژ آن با دست انجام می‌شود.</p>
   <p>بیشتر کارها تک‌نسخه‌اند. اگر قطعه‌ای فروخته شود، می‌توان نمونه‌ای مشابه سفارش داد؛ اما هیچ دو قطعه‌ای کاملاً یکی نیستند.</p>
   <p><a class="btn" href="#/custom">سفارش اختصاصی</a></p>`);
 const care = () => textPage('راهنمای نگهداری', `<ul class="list">

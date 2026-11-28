@@ -108,7 +108,6 @@ export function specs(p) {
     p.category && ['دسته', p.type ? `${p.category}، ${p.type}` : p.category],
     p.material && ['فلز', p.material === 'نقره' ? 'نقرهٔ ۹۲۵' : p.material],
     p.weight && ['وزن تقریبی', `${iso(fmtDec(p.weight))} گرم`],
-    ['وضعیت', `${AVAIL[p.availability].name}؛ ${AVAIL[p.availability].hint}`],
   ].filter(Boolean);
 }
 

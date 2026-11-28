@@ -59,10 +59,10 @@ assert.ok(!related(items, items[0]).some(p => p.id === '1'));
 
 // Specs: silver is shown as 925; unknown fields left out.
 const sp = specs({ ...items[0], material: 'نقره', weight: 9.5 });
-assert.deepEqual(sp.map(s => s[0]), ['دسته', 'فلز', 'وزن تقریبی', 'وضعیت']);
+assert.deepEqual(sp.map(s => s[0]), ['دسته', 'فلز', 'وزن تقریبی']);   // availability has its own line above
 assert.equal(sp[1][1], 'نقرهٔ ۹۲۵');
 assert.ok(sp[2][1].includes('۹٫۵'));
-assert.deepEqual(specs(items[2]).map(s => s[0]), ['دسته', 'وضعیت']);
+assert.deepEqual(specs(items[2]).map(s => s[0]), ['دسته']);
 
 // Prices: Persian digits, wrapped in isolates (Safari number+unit bug).
 assert.equal(toman(12500000), '⁦۱۲٬۵۰۰٬۰۰۰⁩ تومان');
