@@ -386,3 +386,17 @@ a.chip { text-decoration: none; color: inherit; }
 .monthbar .icon-btn:disabled { opacity: .3; }
 .hero-n.neg b { color: var(--r); }
 .cell .c-main > span { font-size: 15.5px; }
+.p-hero { display: grid; gap: 14px; margin: 4px 0 14px; }
+.p-hero img { width: 100%; max-width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 22px; }
+.p-id { display: grid; gap: 2px; }
+.p-id h2 { font-size: 24px; }
+.p-id > small { color: var(--sec); font-size: 13.5px; }
+.p-id .big { font-size: 32px; font-weight: 800; letter-spacing: -.5px; direction: rtl; margin-top: 4px; }
+.p-id .big small { font-size: 15px; font-weight: 500; color: var(--sec); }
+.p-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.p-chips span { font-size: 12.5px; padding: 3px 11px; border-radius: 999px; background: var(--fill); color: var(--sec); }
+.explain.story summary { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+.ps-peek { flex-basis: 100%; font-weight: 400; color: var(--sec); font-size: 12.5px; padding-inline-start: 26px; }
+.explain.story[open] .ps-peek { display: none; }
+.ed-foot .btn.more { flex: 0 0 auto; padding-inline: 18px; }
+.more-menu .danger span { color: var(--r); }

@@ -13,7 +13,7 @@ import { STAGES, STAGE_NAME, TERMS, isOpen, refundable, orderSettings, orderPric
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
-const APP_VERSION = '۲۷';
+const APP_VERSION = '۲۸';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -269,7 +269,7 @@ function viewHome() {
   const list = S.products.filter(p => S.filter === 'all' || (S.filter === 'site' ? p.onSite : p.cat === S.filter));
   const T = todo();
   const sp = shortParts(value);
-  let h = `<div class="brand-top"><img class="brand-logo" src="brand/logo-sun.png" alt="سینژین"></div>` + head('ویترین', 'سینژین', `<button class="add-pill" data-new>${svg('plus')}<span>محصول</span></button>`);
+  let h = `<div class="brand-top"><img class="brand-logo" src="brand/logo-sun.png" alt="سین ژین"></div>` + head('ویترین', 'سین ژین', `<button class="add-pill" data-new>${svg('plus')}<span>محصول</span></button>`);
   h += `<section class="hero enter"><span class="hero-k">ارزش ویترین</span>
     ${value ? `<div class="hero-n"><b data-count="${value}">${sp.num}</b><small>${sp.unit}</small></div>` : `<div class="hero-n empty"><b>${stock.length ? 'هنوز قیمتی ثبت نشده' : 'خالی'}</b></div>`}
     <span class="hero-s">${say(stock.length ? `جمع قیمت فروش ${avail} عدد آماده${res ? ` و ${res} رزرو` : ''}` : 'هنوز محصولی ثبت نشده است')}</span></section>`;
@@ -313,7 +313,7 @@ function ring(label, p, num, unit, sub, tone = '') {
 }
 
 function viewAnalysis() {
-  let h = head('تحلیل', 'سینژین در یک نگاه');
+  let h = head('تحلیل', 'سین ژین در یک نگاه');
   if (!S.products.length) return h + `<div class="empty enter"><p>تحلیل بعد از ثبت چند محصول ساخته می‌شود.</p><button class="btn" data-new>ثبت محصول</button></div>`;
   const { A, items } = insights(view(), S.settings, S.market);
   const all = S.products.length;
@@ -585,7 +585,7 @@ function drawCustomer() {
   }
   h += `<div class="stitle">اطلاعات</div><div class="group">${tf('name', 'نام', 'نام و نام خانوادگی')}${tf('phone', 'تلفن', '۰۹۱۲…', 'inputmode="tel"')}${tf('insta', 'اینستاگرام', 'آیدی، بدون @')}
     ${tf('city', 'شهر', 'اختیاری')}${tf('address', 'آدرس', 'برای ارسال')}${tf('note', 'یادداشت', 'سایز انگشت، سلیقه، مناسبت…')}</div>
-    <p class="foot">روی هر دو گوشی دیده می‌شود؛ فقط در حساب سینژین.</p>
+    <p class="foot">روی هر دو گوشی دیده می‌شود؛ فقط در حساب سین ژین.</p>
     <div class="ed-foot">${edit && !S.invoices.some(i => i.customerId === d.id) && !S.orders.some(o => o.customerId === d.id) ? '<button class="btn ghost danger" data-cdel>حذف</button>' : ''}<button class="btn" data-csave>ذخیره</button></div>`;
   $('#sheet .panel').innerHTML = h;
 }
@@ -645,7 +645,7 @@ function drawOrder() {
       <div class="cell"><span>${d.stage === 'ready' || d.stage === 'done' ? 'قیمت نهایی (وزن واقعی)' : 'قیمت برآوردی'}</span><b class="amt">${iso(fmt(r.final))}</b></div>`;
     if (!inv && d.stage === 'request' && dep) {
       h += `<label class="cell"><span>بیعانه</span><input class="bare" data-onum="deposit" inputmode="numeric" placeholder="${fmt(dep.value)}" value="${d.deposit ? fmt(d.deposit) : ''}"><em class="u">تومان</em></label></div>
-        <p class="foot">${say(`پیشنهاد ${plain(dep.value)} تومان: بیشترِ نصف قیمت (${plain(dep.half)}) و هزینهٔ ساخت (${plain(dep.cost)})، تا اگر مشتری بعد از شروع ساخت انصراف داد، سینژین ضرر نکند.`)}</p>`;
+        <p class="foot">${say(`پیشنهاد ${plain(dep.value)} تومان: بیشترِ نصف قیمت (${plain(dep.half)}) و هزینهٔ ساخت (${plain(dep.cost)})، تا اگر مشتری بعد از شروع ساخت انصراف داد، سین ژین ضرر نکند.`)}</p>`;
     } else if (t) {
       h += `<div class="cell"><span>دریافت‌شده</span><b class="amt">${iso(fmt(t.paid))}</b></div>${t.remaining ? `<div class="cell"><span>مانده</span><b class="amt">${iso(fmt(Math.max(0, r.final - t.paid)))}</b></div>` : ''}</div>`;
     } else h += `</div>`;
@@ -903,7 +903,7 @@ function viewSettings() {
   const B = st.brand || {};
   h += `<div class="stitle">روی فاکتور</div><div class="group enter">
     ${['instagram:اینستاگرام:seenzhin', 'phone:تلفن:۰۹۱۲…', 'thanks:پیام پایانی:از انتخاب شما سپاسگزاریم', 'care:نکتهٔ نگهداری:دور از رطوبت و عطر نگه دارید'].map(x => { const [k, l, ph] = x.split(':'); return `<label class="cell"><span>${l}</span><input class="bare txt" data-brand="${k}" placeholder="${ph}" value="${esc(B[k] || '')}"></label>`; }).join('')}
-  </div><p class="foot">روی هر فاکتور چاپ می‌شوند؛ لوگوی رسمی سینژین همیشه بالای فاکتور است.</p>`;
+  </div><p class="foot">روی هر فاکتور چاپ می‌شوند؛ لوگوی رسمی سین ژین همیشه بالای فاکتور است.</p>`;
   const siteN = S.products.filter(p => p.onSite), siteGaps = siteN.filter(p => siteMissing(p, S.settings).length).length;
   h += `<div class="stitle">سایت</div><div class="group enter"><button class="cell" data-sitecat ${siteN.length ? '' : 'disabled'}><span class="c-main"><b>خروجی کاتالوگ سایت</b>
     <small>${say(siteN.length ? `${siteN.length} محصول روی سایت${siteGaps ? `؛ ${siteGaps} تا هنوز چیزی کم دارند` : '؛ همه کامل'}` : 'اول در صفحهٔ محصول «روی سایت نشان بده» را روشن کنید')}</small></span>${svg('chev')}</button></div>
@@ -929,25 +929,11 @@ function closeSheet() {
   $('#sheet').classList.remove('open'); document.body.classList.remove('locked');
   setTimeout(() => { if (!$('#sheet').classList.contains('open')) $('#sheet').innerHTML = ''; }, 320);
 }
-// How many of this design are ready to sell; sales and reservations come from the invoices.
-function stockBox(d) {
-  const u = S.ed.edit ? unitsFor(d) : { held: 0, soldAll: 0 };
-  const facts = [u.held ? `${faDigits(u.held)} رزرو در فاکتور` : '', u.soldAll ? `${faDigits(u.soldAll)} فروخته تا امروز` : ''].filter(Boolean).join('، ');
-  return `<div class="stitle">موجودی</div><div class="group"><div class="cell"><span>آماده برای فروش</span>
-    <span class="qty"><button class="pill" data-qty="-1" aria-label="یکی کمتر">−</button><b>${faDigits(d._ready)}</b><button class="pill" data-qty="1" aria-label="یکی بیشتر">+</button></span></div></div>
-    <p class="foot">${say(`با هر فاکتور تسویه‌شده یکی کم می‌شود؛ فاکتور بیعانه یکی را رزرو می‌کند.${facts ? ' ' + facts + '.' : ''} اگر دوباره ساختید، اینجا اضافه کنید.`)}</p>`;
-}
-// «روی سایت نشان بده»: only these products go to the Seenzhin website, with public fields only (js/site.js).
-function siteBox(d) {
-  const miss = d.onSite ? siteMissing(d, S.settings) : [];
-  return `<div class="stitle">سایت</div><div class="group"><button class="cell" data-onsite role="switch" aria-checked="${d.onSite ? 'true' : 'false'}">
-    <span class="c-main"><b>روی سایت نشان بده</b><small>${d.onSite ? 'در کاتالوگ سایت سینژین دیده می‌شود' : 'فعلاً فقط داخل اپ'}</small></span><i class="sw ${d.onSite ? 'on' : ''}"></i></button></div>
-    <p class="foot">${miss.length ? say(`برای سایت کم دارد: ${miss.join('، ')}.`) : 'روی سایت فقط نام، عکس، توضیح کوتاه، نوع، فلز، وزن، قیمت و «موجود یا سفارشی» دیده می‌شود؛ هزینه‌ها هرگز.'}</p>`;
-}
 function openEditor(p, step) {
   const d = p ? Object.assign(blank(), JSON.parse(JSON.stringify(p)), { _added: [] }) : blank();
   d._ready = p ? unitsFor(p).left : 1;
   S.ed = { d, step: step ?? (p ? 4 : 0), edit: !!p };
+  S.ed.orig = edSnap(d);
   openSheet('');
   drawEditor();
 }
@@ -1060,12 +1046,12 @@ function priceStory(d, r) {
   const metal = r.material - (d.stone || 0);
   const row = (k, v, note = '') => `<div class="ps-r"><span>${k}${note ? `<small>${note}</small>` : ''}</span><b>${v}</b></div>`;
   const step = (i, k, how, v) => `<div class="ps-s"><i>${faDigits(i)}</i><span>${k}<small>${how}</small></span><b>${n(v)}</b></div>`;
-  let h = `<details class="explain story" open><summary>این قیمت از کجا آمد؟</summary>`;
+  let h = `<details class="explain story"><summary>این قیمت از کجا آمد؟<span class="ps-peek">${say(r.manualFinal ? 'قیمت دستی؛ فرمول کنارش' : `${plain(r.materialPart || 0)} متریال + ${plain(r.workPart)} کار و طراحی`)}</span></summary>`;
   // 1) what we know about the piece
   h += `<div class="ps"><p class="ps-t">مشخصات</p>
     ${row('محصول', esc([catOf(d.cat) && catOf(d.cat).name, d.sub].filter(Boolean).join('، ')))}
     ${row('سطح کار', lv ? lv.name : '—', lv ? esc(lv.hint) : '')}
-    ${row('فلز', mt ? mt.name : '—', self ? 'خود سینژین تأمین می‌کند' : supplierOf(st, d.material) === 'workshop' ? 'کارگاه تأمین می‌کند؛ داخل هزینهٔ ساخت' : '')}
+    ${row('فلز', mt ? mt.name : '—', self ? 'خود سین ژین تأمین می‌کند' : supplierOf(st, d.material) === 'workshop' ? 'کارگاه تأمین می‌کند؛ داخل هزینهٔ ساخت' : '')}
     ${self && d.weight ? row('وزن', `${iso(fmtDec(d.weight))} گرم`) : ''}
     ${self && g ? row('قیمت روز هر گرم', n(g), st.pricesAt && st.pricesAt[d.material] ? `به‌روز شده ${new Intl.DateTimeFormat('fa-IR-u-ca-persian', { day: 'numeric', month: 'long' }).format(new Date(st.pricesAt[d.material]))}` : '') : ''}
     ${row('سنگ و قطعه‌ها', d.stone ? n(d.stone) : 'ندارد')}
@@ -1094,6 +1080,8 @@ function priceStory(d, r) {
   return h;
 }
 
+// The product page: what it is and what it sells for first, one main action, everything else one tap away.
+const edSnap = d => JSON.stringify({ ...d, _added: undefined });
 function summary(d, r) {
   const cat = catOf(d.cat), lv = levelOf(d.level), mt = matOf(d.material);
   const ph = d.photos[0] && urls.get(d.photos[0]);
@@ -1104,20 +1092,45 @@ function summary(d, r) {
     [2, 'هزینه‌ها', [mt && mt.name, self && d.weight != null ? `${d.weight} گرم` : '', d.invoice != null ? `هزینهٔ ساخت ${plain(d.invoice)}` : 'هزینهٔ ساخت وارد نشده'].filter(Boolean).join('، ')],
     [3, 'نام و عکس', `${d.title || 'بدون نام'}، ${d.photos.length} عکس`],
   ];
-  let h = `<div class="sum-head">${ph ? `<img src="${ph}" alt="">` : ''}<div><h2>${esc(d.title || d.sub || (S.ed.order ? 'سفارش' : 'محصول تازه'))}</h2>
-    <div class="big">${r.complete ? `${iso(fmt(r.final))} <small>تومان</small>` : '<span class="none">هنوز کامل نیست</span>'}</div></div></div>`;
+  // Status at a glance: ready pieces, the site, a hand-set price, the margin.
+  const chips = [];
+  if (!S.ed.order) chips.push(d._ready > 0 ? `${faDigits(d._ready)} عدد آماده` : 'تمام شد');
+  if (!S.ed.order && d.onSite) chips.push('روی سایت');
+  if (r.manualFinal) chips.push('قیمت دستی');
+  if (r.complete && r.cost) chips.push(`سود ${faDigits(Math.round((r.final - r.cost) / r.final * 100))}٪`);
+  let h = `<div class="p-hero">${ph ? `<img src="${ph}" alt="">` : ''}<div class="p-id">
+    <h2>${esc(d.title || d.sub || (S.ed.order ? 'سفارش' : 'محصول تازه'))}</h2>
+    <small>${esc([cat && cat.name, d.sub, mt && d.material !== 'none' ? mt.name : '', self && d.weight ? `${faDigits(d.weight)} گرم` : ''].filter(Boolean).join('، '))}</small>
+    <div class="big">${r.complete ? `${iso(fmt(r.final))} <small>تومان</small>` : '<span class="none">هنوز کامل نیست</span>'}</div>
+    ${chips.length ? `<div class="p-chips">${chips.map(c => `<span>${c}</span>`).join('')}</div>` : ''}</div></div>`;
   if (r.missing.length) h += `<div class="group"><div class="cell col miss"><b>برای قیمت کامل:</b>${r.missing.map(m => `<span>${say(m.text)}</span>`).join('')}</div></div>`;
   h += priceStory(d, r);
+  if (!S.ed.order) {
+    const miss = d.onSite ? siteMissing(d, S.settings) : [];
+    h += `<div class="stitle">فروش</div><div class="group">
+      <div class="cell"><span class="c-main"><b>آماده برای فروش</b><small>فاکتور تسویه یکی کم می‌کند، بیعانه یکی رزرو</small></span>
+        <span class="qty"><button class="pill" data-qty="-1" aria-label="یکی کمتر">−</button><b>${faDigits(d._ready)}</b><button class="pill" data-qty="1" aria-label="یکی بیشتر">+</button></span></div>
+      <button class="cell" data-onsite role="switch" aria-checked="${d.onSite ? 'true' : 'false'}"><span class="c-main"><b>روی سایت نشان بده</b>
+        <small>${miss.length ? say(`برای سایت کم دارد: ${miss.join('، ')}`) : d.onSite ? 'فقط نام، عکس، توضیح و قیمت؛ هزینه‌ها هرگز' : 'فعلاً فقط داخل اپ'}</small></span><i class="sw ${d.onSite ? 'on' : ''}"></i></button></div>`;
+  }
   const formula = r.manualFinal ? r.formulaFinal : r.final;
-  h += `<div class="stitle">قیمت نهایی دستی (اختیاری)</div><div class="group"><label class="cell"><span>قیمت نهایی</span><input class="bare" data-num="finalPrice" inputmode="numeric" placeholder="${formula ? fmt(formula) : 'مثل فرمول'}" value="${d.finalPrice ? fmt(d.finalPrice) : ''}"><em class="u">تومان</em></label>
-    ${d.finalPrice ? `<button class="cell" data-clearfinal><span class="sec">برگشت به قیمت فرمول${formula ? say(` (${plain(formula)} تومان)`) : ''}</span></button>` : ''}</div>
-    <p class="foot">اگر می‌خواهید این محصول قیمتی جز فرمول داشته باشد. برای یک فروش خاص، قیمت را در خود فاکتور عوض کنید.</p>`;
-  h += `<div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}</div>`;
-  if (S.ed.order) return h + `<div class="ed-foot"><button class="btn" data-save>${S.ed.then === 'ready' ? 'ثبت وزن واقعی' : 'ذخیره در سفارش'}</button></div>`;
-  h += stockBox(d);
-  h += siteBox(d);
-  h += `<div class="ed-foot">${S.ed.edit ? `<button class="btn ghost danger" data-del>حذف</button><button class="btn ghost" data-dup>مشابه</button>${d._ready > 0 && r.complete ? `<button class="btn ghost" data-sell="${d.id}">فاکتور</button>` : ''}` : ''}<button class="btn" data-save>${S.ed.edit ? 'ذخیره' : 'ذخیره در ویترین'}</button></div>`;
-  return h;
+  h += `<div class="stitle">ویرایش</div><div class="group">${rows.map(([s, k, v]) => `<button class="cell" data-step="${s}"><span>${k}</span><span class="sec val">${say(v)}</span>${svg('chev')}</button>`).join('')}
+    <label class="cell"><span class="c-main"><span>قیمت نهایی دستی</span><small>اختیاری؛ جای قیمت فرمول</small></span><input class="bare" data-num="finalPrice" inputmode="numeric" placeholder="${formula ? fmt(formula) : 'مثل فرمول'}" value="${d.finalPrice ? fmt(d.finalPrice) : ''}"><em class="u">تومان</em></label>
+    ${d.finalPrice ? `<button class="cell" data-clearfinal><span class="sec">برگشت به قیمت فرمول${formula ? say(` (${plain(formula)} تومان)`) : ''}</span></button>` : ''}</div>`;
+  if (S.ed.more && S.ed.edit && !S.ed.order) h += `<div class="group more-menu"><button class="cell" data-dup><span>محصول مشابه</span><small class="sec">همین مشخصات، محصول تازه</small></button><button class="cell danger" data-del><span>حذف این محصول</span></button></div>`;
+  return h + `<div class="ed-foot">${footFor(d, r)}</div>`;
+}
+// One main button: «ذخیره» when something changed, otherwise «فاکتور فروش»; the rest under «بیشتر».
+function footFor(d, r) {
+  if (S.ed.order) return `<button class="btn" data-save>${S.ed.then === 'ready' ? 'ثبت وزن واقعی' : 'ذخیره در سفارش'}</button>`;
+  if (!S.ed.edit) return `<button class="btn" data-save>ذخیره در ویترین</button>`;
+  const dirty = edSnap(d) !== S.ed.orig, sell = !dirty && d._ready > 0 && r.complete;
+  return `<button class="btn ghost more" data-more aria-expanded="${S.ed.more ? 'true' : 'false'}" aria-label="بیشتر">${S.ed.more ? 'بستن' : 'بیشتر'}</button>`
+    + (sell ? `<button class="btn" data-sell="${d.id}">فاکتور فروش</button>` : `<button class="btn" data-save>ذخیره</button>`);
+}
+function refreshFoot() {
+  if (!S.ed || S.ed.step !== 4) return;
+  const f = $('#sheet .ed-foot'); if (f) f.innerHTML = footFor(S.ed.d, price(S.ed.d, ES()));
 }
 
 // ---------- drift: approve today's prices ----------
@@ -1209,7 +1222,7 @@ async function importAll(file) {
     for (const k of ['invoices', 'customers', 'orders', 'expenses']) if (data[k]) { await db.clear(k); await db.putMany(k, data[k]); }
     await db.set('settings', data.settings);
     location.reload();
-  } catch { island('این فایل پشتیبان سینژین نیست'); }
+  } catch { island('این فایل پشتیبان سین ژین نیست'); }
 }
 
 // ---------- events ----------
@@ -1384,6 +1397,7 @@ function bind() {
     if (ds.usesug) { d.invoice = Number(ds.usesug); return drawEditor(); }
     if ('clearfinal' in ds) { d.finalPrice = null; return drawEditor(); }
     if ('onsite' in ds) { d.onSite = !d.onSite; return drawEditor(); }
+    if ('more' in ds) { S.ed.more = !S.ed.more; drawEditor(); if (S.ed.more) $('#sheet .panel').scrollTop = 1e6; return; }
     if (ds.qty) { d._ready = Math.max(0, d._ready + Number(ds.qty)); return drawEditor(); }
     if (ds.usecalc) { d.invoice = Number(ds.usecalc); return drawEditor(); }
     if (ds.fixinv) { d.invoice = d.invoice * Number(ds.fixinv); return drawEditor(); }
@@ -1443,7 +1457,7 @@ function bind() {
       if (parts[0] === 'item') { const nt = $(`[data-note="${parts[1]}"]`); if (nt) nt.innerHTML = saleNote(d.items[+parts[1]]); }
       return;
     }
-    if (el.dataset.text && S.ed) { S.ed.d[el.dataset.text] = el.value; return; }
+    if (el.dataset.text && S.ed) { S.ed.d[el.dataset.text] = el.value; refreshFoot(); return; }
     if (!el.dataset.num) return;
     const key = el.dataset.num, v = parseNum(el.value);
     if (!el.dataset.dec && v != null) el.value = fmt(v);
@@ -1453,7 +1467,8 @@ function bind() {
     S.ed.d[key] = v;
     const r = price(S.ed.d, ES()), box = $('.ed-price');
     if (box) { box.classList.toggle('ok', r.complete); box.querySelector('b').innerHTML = priceTag(r); }
-    const big = $('.sum-head .big'); if (big && r.complete) big.innerHTML = `${iso(fmt(r.final))} <small>تومان</small>`;
+    const big = $('.p-hero .big'); if (big && r.complete) big.innerHTML = `${iso(fmt(r.final))} <small>تومان</small>`;
+    refreshFoot();
   });
 
   document.addEventListener('change', async e => {

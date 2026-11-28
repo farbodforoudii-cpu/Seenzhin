@@ -106,7 +106,7 @@ export async function renderInvoice(inv, brand, logo, photo) {
     font(400, 22); txt(label, x + boxW - 26, y + 44, 'right', C.faint);
     lines.forEach((l, k) => { font(k ? 400 : 700, k ? 24 : 30); (l.ltr ? ltr : txt)(fit(ctx, l.t, boxW - 52), l.ltr ? x + 26 : x + boxW - 26, y + 90 + k * 38, l.ltr ? 'left' : 'right', k ? C.sec : C.ink); });
   };
-  party(R - boxW, 'فروشنده', [{ t: 'سینژین' }, ...(brand.instagram ? [{ t: '@' + brand.instagram.replace(/^@/, ''), ltr: true }] : [])]);
+  party(R - boxW, 'فروشنده', [{ t: 'سین ژین' }, ...(brand.instagram ? [{ t: '@' + brand.instagram.replace(/^@/, ''), ltr: true }] : [])]);
   const cn = inv.customer && inv.customer.name, cp = inv.customer && inv.customer.phone;
   party(L, 'خریدار', [{ t: cn || 'مشتری گرامی' }, ...(cp ? [{ t: faDigits(cp), ltr: true }] : [])]);
   y += boxH + 52;

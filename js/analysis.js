@@ -113,7 +113,7 @@ function describe(p) {
   const metal = { silver: 'نقره', gold: 'طلا', bronze: 'برنز' }[p.material] || '';
   return `«${p.title || p.sub || 'محصول'}» (${[cat, p.sub, lv, metal && p.weight ? `${metal} ${fa(p.weight)} گرم` : metal].filter(Boolean).join('، ')})`;
 }
-const INTRO = 'من سروین هستم، طراح و سازندهٔ برند جواهرات و آثار دست‌ساز «سینژین». تو از کارها و روند ساخت من زیاد می‌دانی.';
+const INTRO = 'من سروین هستم، طراح و سازندهٔ برند جواهرات و آثار دست‌ساز «سین ژین». تو از کارها و روند ساخت من زیاد می‌دانی.';
 export function jobsFor(products, st, now = Date.now()) {
   const out = [];
   const live = products.filter(p => p.status !== 'sold');
@@ -156,7 +156,7 @@ export function jobsFor(products, st, now = Date.now()) {
   // 6) a short selling description (for invoices, Instagram and the website later)
   for (const p of live.filter(p => !(p.desc && p.desc.trim()))) {
     out.push({ id: 'desc:' + p.id, act: 'edit:' + p.id, title: `یک توضیح کوتاه برای ${describe(p)} بنویس`, why: 'دو خط برای اینستاگرام و سایت؛ GPT کمک می‌کند.',
-      prompt: `${INTRO}\nبرای محصول ${describe(p)} یک توضیح فروش کوتاه بنویس: حداکثر دو جمله، فارسی، با لحن آرام و هنری سینژین (seen for vision, zhin for life)، بدون اغراق و بدون ایموجی. فقط خود متن را بده.` });
+      prompt: `${INTRO}\nبرای محصول ${describe(p)} یک توضیح فروش کوتاه بنویس: حداکثر دو جمله، فارسی، با لحن آرام و هنری سین ژین (seen for vision, zhin for life)، بدون اغراق و بدون ایموجی. فقط خود متن را بده.` });
   }
   return out;
 }

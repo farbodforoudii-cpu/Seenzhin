@@ -1,4 +1,4 @@
-# Seenzhin («سینژین») — notes for Claude
+# Seenzhin («سین ژین») — notes for Claude
 
 Internal app for Seenzhin, a handcrafted brand (silver jewelry, silver panels, bronze sculptures, handmade objects).
 **Main user: Servin** (manages everything alone). **Farbod** supports, trains Servin and does the first data entry.
