@@ -15,4 +15,8 @@ assert.equal(cat[0].price, 12000000);
 // Nothing private leaves the app.
 for (const k of ['invoice', 'stone', 'level', 'approved', 'stock', 'finalPrice', 'hours', 'cost']) assert.ok(!(k in cat[0]), k + ' must not be public');
 assert.deepEqual(Object.keys(cat[0]).sort(), ['availability', 'category', 'desc', 'id', 'material', 'photos', 'price', 'title', 'type', 'weight']);
+const { catalogFile } = await import('../js/site.js');
+const f = catalogFile(cat, { ph1: 'data:image/jpeg;base64,AAA' }, new Date('2026-11-28T00:00:00Z'));
+assert.deepEqual({ app: f.app, kind: f.kind, v: f.v, currency: f.currency, at: f.at }, { app: 'seenzhin', kind: 'catalog', v: 1, currency: 'IRT', at: '2026-11-28T00:00:00.000Z' });
+assert.deepEqual(f.items[0].photos, [{ id: 'ph1', data: 'data:image/jpeg;base64,AAA' }]);
 console.log('site ok');

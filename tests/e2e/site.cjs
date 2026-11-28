@@ -38,6 +38,24 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
     const cards = await pg.$$eval('.pcard', els => els.length);
     ok(cards === 1, scheme + ': «روی سایت» filter shows 1 product, got ' + cards);
     await pg.screenshot({ path: OUT + scheme + '-site-filter.png' });
+    // Catalog file: only the marked product, only public fields, photo inside.
+    await pg.evaluate(async () => {
+      const db = await new Promise(r => { const q = indexedDB.open('seenzhin', 4); q.onsuccess = () => r(q.result); });
+      const c = document.createElement('canvas'); c.width = c.height = 40; c.getContext('2d').fillRect(0, 0, 40, 40);
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .8));
+      await new Promise(r => { const t = db.transaction(['photos', 'products'], 'readwrite'); t.objectStore('photos').put({ id: 'phx', blob });
+        const st = t.objectStore('products'); const g = st.get('g1'); g.onsuccess = () => { st.put({ ...g.result, photos: ['phx'], desc: 'دست‌ساز' }); }; t.oncomplete = r; });
+    });
+    await pg.reload(); await pg.waitForTimeout(800);
+    await pg.click('[data-tab="settings"]'); await pg.waitForTimeout(400);
+    const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('[data-sitecat]')]);
+    const cat = JSON.parse(require('fs').readFileSync(await dl.path(), 'utf8'));
+    ok(cat.kind === 'catalog' && cat.v === 1 && cat.currency === 'IRT' && cat.items.length === 1, scheme + ': catalog file with 1 product');
+    const it = cat.items[0];
+    ok(it.title === 'گوشوارهٔ آزمایشی' && it.price === 6600000 && it.availability === 'available' && /^data:image\/jpeg/.test(it.photos[0].data), scheme + ': fields and photo');
+    ok(!['invoice', 'stone', 'level', 'approved', 'stock', 'cost'].some(k => k in it) && !JSON.stringify(cat).includes('1500000'), scheme + ': no making cost in the file');
+    await pg.evaluate(() => document.querySelector('[data-sitecat]').scrollIntoView({ block: 'center' })); await pg.waitForTimeout(150);
+    await pg.screenshot({ path: OUT + scheme + '-site-export.png' });
     await ctx.close();
   }
   ok(!errors.length, 'no console errors ' + errors.join('; '));

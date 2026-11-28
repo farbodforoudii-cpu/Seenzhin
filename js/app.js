@@ -7,12 +7,12 @@ import { fmt, fmtDec, iso, parseNum, esc, faDigits, short, shortParts } from './
 import { insights, suggestInvoice, marketGap, shownPrice, jobsFor } from './analysis.js';
 import { totals, nextNumber, noFa, STATUS_NAME, renderInvoice } from './invoice.js';
 import { sync } from './sync.js';
-import { siteMissing } from './site.js';
+import { siteMissing, siteCatalog, catalogFile } from './site.js';
 import { STAGES, STAGE_NAME, TERMS, isOpen, refundable, orderSettings, orderPrice, suggestDeposit, orderProfit, normPhone, customerId, findCustomer, customerStats, orderAlerts } from './orders.js';
 
 // Design rules shared with hesab-man / Life-os: logic → numbers → trend; one big number with one sentence;
 // short numbers («۷٫۹ میلیون»); details only on request; every percentage says what it divides.
-const APP_VERSION = '۲۵';
+const APP_VERSION = '۲۶';
 const S = { settings: null, products: [], invoices: [], tab: 'home', filter: 'all', market: null, ed: null, inv: null, logo: null };
 const urls = new Map();
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -800,6 +800,10 @@ function viewSettings() {
   h += `<div class="stitle">روی فاکتور</div><div class="group enter">
     ${['instagram:اینستاگرام:seenzhin', 'phone:تلفن:۰۹۱۲…', 'thanks:پیام پایانی:از انتخاب شما سپاسگزاریم', 'care:نکتهٔ نگهداری:دور از رطوبت و عطر نگه دارید'].map(x => { const [k, l, ph] = x.split(':'); return `<label class="cell"><span>${l}</span><input class="bare txt" data-brand="${k}" placeholder="${ph}" value="${esc(B[k] || '')}"></label>`; }).join('')}
   </div><p class="foot">روی هر فاکتور چاپ می‌شوند؛ لوگوی رسمی سینژین همیشه بالای فاکتور است.</p>`;
+  const siteN = S.products.filter(p => p.onSite), siteGaps = siteN.filter(p => siteMissing(p, S.settings).length).length;
+  h += `<div class="stitle">سایت</div><div class="group enter"><button class="cell" data-sitecat ${siteN.length ? '' : 'disabled'}><span class="c-main"><b>خروجی کاتالوگ سایت</b>
+    <small>${say(siteN.length ? `${siteN.length} محصول روی سایت${siteGaps ? `؛ ${siteGaps} تا هنوز چیزی کم دارند` : '؛ همه کامل'}` : 'اول در صفحهٔ محصول «روی سایت نشان بده» را روشن کنید')}</small></span>${svg('chev')}</button></div>
+    <p class="foot">فقط نام، توضیح کوتاه، عکس، نوع، فلز، وزن، قیمت ویترین و «موجود یا سفارشی». هزینه‌ها و مشتری‌ها در آن نیست.</p>`;
   h += `<div class="stitle">پشتیبان</div><div class="group enter"><button class="cell" data-export><span>گرفتن فایل پشتیبان</span>${svg('chev')}</button>
     <label class="cell"><span>بازگردانی از فایل</span>${svg('chev')}<input type="file" accept="application/json" data-import hidden></label></div>
     <p class="foot">داده‌ها روی همین دستگاه و، با حساب مشترک، روی سرور است؛ هر چند وقت یک پشتیبان بگیرید.</p>
@@ -1077,6 +1081,19 @@ async function exportAll() {
   a.href = URL.createObjectURL(blob); a.download = `seenzhin-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
+// The public catalog for the website, as one file (photos inside). Format: docs/SITE-CONTRACT.md.
+async function exportCatalog() {
+  const items = siteCatalog(S.products, S.settings, unitsFor), photoData = {};
+  for (const id of items.flatMap(it => it.photos)) {
+    const ph = await db.getOne('photos', id);
+    if (ph && ph.blob) photoData[id] = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(ph.blob); });
+  }
+  const file = new File([JSON.stringify(catalogFile(items, photoData))], `seenzhin-catalog-${new Date().toISOString().slice(0, 10)}.json`, { type: 'application/json' });
+  logEvent(`خروجی کاتالوگ سایت گرفت؛ ${items.length} محصول`);
+  if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file] }); return; } catch { /* cancelled */ } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
 async function importAll(file) {
   try {
     const data = JSON.parse(await file.text());
@@ -1134,6 +1151,7 @@ function bind() {
     if (ds.sup) { const undo = await snap({ settings: true }); S.settings.suppliers[ds.sup] = ds.val; await saveSettings(); render(); return offerUndo('ذخیره شد', undo); }
     if (ds.round != null) { const undo = await snap({ settings: true }); S.settings.rounding = Number(ds.round); await saveSettings(); render(); return offerUndo('ذخیره شد', undo); }
     if ('export' in ds) return exportAll();
+    if ('sitecat' in ds) return exportCatalog();
     if ('signin' in ds) {
       const u = $('#su').value, p = $('#sp').value;
       t.disabled = true; t.textContent = 'در حال ورود…';
