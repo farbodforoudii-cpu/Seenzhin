@@ -1,5 +1,5 @@
 /* Seenzhin website.
-   Direction: quiet gallery for one-off handmade silver. One memorable thing — the logo's sun drawn like silver wire —
+   Direction: quiet gallery for one-off handmade silver. One memorable thing — the real Seenzhin logo rising like a sunrise —
    and everything else still. Brand colours (app decision 11): mint #D4E1D8, sand #DBD3C9, gold #B7975B, charcoal #5A605C.
    One typeface (Vazirmatn): very light, very large headlines like fine wire; regular text for reading.
    Everything aligns to one start edge (right, RTL) on one grid; one gutter, one image radius.
@@ -14,7 +14,7 @@
   --muted: #5F6762;
   --line: #CCD6CF;
   --gold: #8C6E3C;       /* text-safe gold */
-  --gold-wire: #B7975B;  /* the sun, decorative only */
+  --gold-wire: #B7975B;  /* decorative only */
   --order: #8A5F2A;
   --gut: clamp(16px, 4vw, 40px);
   --maxw: 1280px;
@@ -107,22 +107,22 @@ main > .lead { margin-bottom: 8px; }
 .link:hover { color: var(--gold); }
 .more-link { margin-top: 48px; display: flex; justify-content: center; }
 
-/* ---------- hero: text on the start edge, the sun on the end edge ---------- */
+/* ---------- hero: text on the start edge, the logo on the end edge ---------- */
 .hero { display: grid; align-items: center; gap: 12px; min-height: min(660px, calc(100svh - 110px)); }
 .hero h1 { font-size: clamp(2.6rem, 1.1rem + 6.6vw, 5.8rem); font-weight: 200; line-height: 1.15; }
 .hero .lead { margin-top: 24px; }
-.hero-art { order: -1; justify-self: center; width: min(58vw, 250px); }
+.hero-art { order: -1; justify-self: center; width: min(62vw, 260px); }
 @media (min-width: 760px) {
   .hero { grid-template-columns: 1.3fr 1fr; gap: 40px; }
-  .hero-art { order: 0; width: min(100%, 460px); justify-self: end; }
+  .hero-art { order: 0; width: min(100%, 420px); justify-self: center; }
 }
-.sun { width: 100%; height: auto; overflow: visible; display: block; }
-.sun line, .sun circle, .sun path { fill: none; stroke: var(--gold-wire); stroke-width: 1.5; stroke-linecap: round; }
-.sun .rays { transform-origin: 200px 200px; animation: turn 160s linear infinite; }
-.sun line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1.1s var(--ease) forwards; animation-delay: calc(.3s + var(--i) * 45ms); }
-.sun .core { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1.6s var(--ease) .1s forwards; }
-@keyframes draw { to { stroke-dashoffset: 0; } }
-@keyframes turn { to { transform: rotate(360deg); } }
+/* Sunrise: horizon and wordmark first, then the half-sun and rays rise above the horizon (logo itself untouched). */
+.brandmark { width: 100%; height: auto; display: block; animation: sunrise 1.8s var(--ease) .2s both; }
+@keyframes sunrise {
+  0% { clip-path: inset(68% 0 0 0); transform: translateY(10px); opacity: 0; }
+  25% { clip-path: inset(68% 0 0 0); transform: translateY(10px); opacity: 1; }
+  100% { clip-path: inset(0 0 0 0); transform: none; opacity: 1; }
+}
 .hero-text > * { animation: rise .9s var(--ease) both; }
 .hero-text > :nth-child(2) { animation-delay: .15s; } .hero-text > :nth-child(3) { animation-delay: .3s; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
@@ -154,7 +154,7 @@ main > .lead { margin-bottom: 8px; }
 .save.on, .save-btn.on { color: var(--gold); }
 .save.on .ic, .save-btn.on .ic { fill: currentColor; }
 .nophoto { display: grid; place-items: center; width: 100%; height: 100%; color: var(--gold-wire); background: var(--well); }
-.nophoto .ic { width: 44px; height: 44px; }
+.nophoto .mark { width: 38%; opacity: .55; }
 
 /* ---------- shop ---------- */
 .tools { display: flex; gap: 10px; margin: 24px 0 14px; }
@@ -254,9 +254,10 @@ legend { font-weight: 500; margin-bottom: 12px; padding: 0; }
 .list { margin: 0; padding-inline-start: 1.2em; } .list li { margin-bottom: 8px; }
 .empty { text-align: center; padding: 72px 16px; color: var(--muted); display: grid; justify-items: center; gap: 14px; }
 .empty h1 { color: var(--ink); }
-.empty .ic { width: 44px; height: 44px; color: var(--gold-wire); }
+.empty .mark { width: 96px; opacity: .8; }
 .loading { min-height: 60vh; display: grid; place-items: center; color: var(--gold-wire); }
-.loading .ic { width: 52px; height: 52px; animation: turn 6s linear infinite; }
+.loading .mark { width: 110px; animation: breathe 1.6s ease-in-out infinite alternate; }
+@keyframes breathe { from { opacity: .35; } to { opacity: .9; } }
 .preview-bar { margin-bottom: 20px; padding: 10px 16px; border-radius: var(--r); background: var(--sand); font-size: .88rem; text-align: center; }
 .ok-note { color: #3F7A57; font-weight: 500; }
 
@@ -277,5 +278,4 @@ legend { font-weight: 500; margin-bottom: 12px; padding: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
-  .sun line, .sun .core { stroke-dashoffset: 0; }
 }

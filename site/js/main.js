@@ -45,7 +45,7 @@ async function load() {
 const icon = name => `<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const photo = (p, i = 0, cls = '') => p.photos[i]
   ? `<img class="${cls}" src="${esc(p.photos[i])}" alt="${esc(p.title)}${i ? ' — نمای ' + faDigits(i + 1) : ''}" loading="${i ? 'lazy' : 'eager'}" decoding="async">`
-  : `<span class="${cls} nophoto" role="img" aria-label="${esc(p.title)}">${icon('sun')}</span>`;
+  : `<span class="${cls} nophoto" role="img" aria-label="${esc(p.title)}">${mark()}</span>`;
 
 function card(p) {
   const saved = S.saved.has(p.id);
@@ -77,10 +77,9 @@ function contactButtons(text, { compact = false } = {}) {
 const crumbs = list => `<nav class="crumbs" aria-label="مسیر">${list.map(([t, h]) => h ? `<a href="${h}">${esc(t)}</a>` : `<span aria-current="page">${esc(t)}</span>`).join('<span class="sep">/</span>')}</nav>`;
 
 // ---------- pages ----------
-// The sun of the Seenzhin logo, drawn like silver wire. The one moving thing on the page.
-const SUN = `<svg class="sun" viewBox="0 0 400 400" aria-hidden="true">
-  <g class="rays">${Array.from({ length: 24 }, (_, i) => `<line pathLength="1" x1="200" y1="${i % 2 ? 58 : 30}" x2="200" y2="${i % 2 ? 104 : 112}" transform="rotate(${i * 15} 200 200)" style="--i:${i}"/>`).join('')}</g>
-  <circle pathLength="1" class="core" cx="200" cy="200" r="62"/></svg>`;
+// The Seenzhin logo exactly as designed (brand/logo-sun.png). Only motion is added: a sunrise on first view.
+const LOGO = `<img class="brandmark" src="img/logo-sun.png" alt="" width="809" height="593">`;
+const mark = (cls = '') => `<img class="mark ${cls}" src="img/logo-sun.png" alt="" aria-hidden="true">`;
 
 function home() {
   const cats = categoriesOf(S.items);
@@ -91,7 +90,7 @@ function home() {
         <p class="lead">جواهر، تابلو و تندیس نقره؛ دست‌ساز در کارگاه سینژین.</p>
         <div class="actions"><a class="btn primary" href="#/shop">دیدن آثار</a><a class="link" href="#/custom">سفارش اختصاصی</a></div>
       </div>
-      <div class="hero-art">${SUN}</div>
+      <div class="hero-art" aria-hidden="true">${LOGO}</div>
     </section>
     <section class="section">
       <div class="section-head"><h2>آثار</h2>
@@ -218,8 +217,8 @@ function preview() {
     ${S.preview ? `<p class="ok-note" role="status">${esc(S.preview)}</p><p><a class="btn" href="#/shop">دیدن آثار</a></p>` : ''}`);
 }
 
-function empty(text, extra = '') { return `<div class="empty">${icon('sun')}<p>${text}</p>${extra}</div>`; }
-function notfound(text = 'این صفحه پیدا نشد.') { return `<div class="empty">${icon('sun')}<h1>پیدا نشد</h1><p>${esc(text)}</p><a class="btn" href="#/shop">دیدن آثار</a></div>`; }
+function empty(text, extra = '') { return `<div class="empty">${mark()}<p>${text}</p>${extra}</div>`; }
+function notfound(text = 'این صفحه پیدا نشد.') { return `<div class="empty">${mark()}<h1>پیدا نشد</h1><p>${esc(text)}</p><a class="btn" href="#/shop">دیدن آثار</a></div>`; }
 
 // ---------- render + meta ----------
 const TITLES = { home: '', shop: 'آثار', custom: 'سفارش اختصاصی', saved: 'ذخیره‌ها', about: 'دربارهٔ ما', care: 'راهنمای نگهداری', contact: 'تماس', preview: 'پیش‌نمایش', notfound: 'پیدا نشد' };
@@ -228,7 +227,7 @@ function render() {
   const r = parseRoute(location.hash);
   if (r.page !== 'custom') { delete S.form._message; delete S.form._errors; }
   let html, title = TITLES[r.page] || '';
-  if (!S.loaded) html = `<div class="loading" aria-busy="true">${icon('sun')}</div>`;
+  if (!S.loaded) html = `<div class="loading" aria-busy="true">${mark()}</div>`;
   else if (S.failed) html = empty('آثار بارگذاری نشد. اتصال اینترنت را بررسی کنید.', `<button class="btn" data-retry>تلاش دوباره</button>`);
   else if (r.page === 'home') html = home();
   else if (r.page === 'shop') { html = shop(r.query); if (r.query.cat) title = catName(r.query.cat); }
