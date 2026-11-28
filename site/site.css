@@ -178,7 +178,7 @@ main > .lead { margin-bottom: 8px; }
 .slides { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; border-radius: var(--r); scrollbar-width: none; overscroll-behavior-x: contain; background: var(--well); }
 .slides::-webkit-scrollbar { display: none; }
 .slide { flex: 0 0 100%; margin: 0; scroll-snap-align: center; aspect-ratio: 4 / 5; }
-.slide-img { width: 100%; height: 100%; object-fit: cover; }
+.slide-img { width: 100%; height: 100%; object-fit: contain; }   /* the whole piece is visible: wide panels are not cut */
 @media (max-width: 599px) { .gallery { margin-inline: calc(-1 * var(--gut)); } .slides { border-radius: 0; } }
 .thumbs { display: flex; gap: 8px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; padding-inline: var(--gut); }
 @media (min-width: 600px) { .thumbs { padding-inline: 0; } }
