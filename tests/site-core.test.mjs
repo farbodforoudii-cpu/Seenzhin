@@ -6,7 +6,8 @@ import {
   parseRoute, shopHash, shortPrice, toman, catSlug,
 } from '../site/js/catalog.js';
 import { defaultSettings } from '../js/model.js';
-import { siteCatalog } from '../js/site.js';
+import { siteCatalog, catalogFile } from '../js/site.js';
+import { catalogOk } from '../site/js/catalog.js';
 
 // The app's public catalog is accepted as is (contract between app and site).
 const st = defaultSettings(); st.prices.silver = 100000;
@@ -16,6 +17,16 @@ const n0 = normalize({ items: fromApp });
 assert.equal(n0.length, 1);
 assert.deepEqual({ ...n0[0], order: undefined }, { id: 'a', title: 'شکوفه', desc: 'دست‌ساز', category: 'جواهرات', type: 'گوشواره', material: 'نقره',
   weight: 8, price: 12000000, availability: 'available', photos: ['x.jpg'], order: undefined });
+
+// The exported file (contract v1): photos as { id, data }, later { id, url }.
+const file = catalogFile(fromApp, { 'x.jpg': 'data:image/jpeg;base64,AAAA' }, new Date('2026-11-28T09:00:00Z'));
+assert.ok(catalogOk(file));
+assert.deepEqual(normalize(file)[0].photos, ['data:image/jpeg;base64,AAAA']);
+assert.deepEqual(normalize({ ...file, items: [{ ...file.items[0], photos: [{ id: 'a', url: 'https://cdn/a.jpg' }, { id: 'b' }, { id: 'c', url: 'javascript:alert(1)' }] }] })[0].photos, ['https://cdn/a.jpg']);
+// Anything that is not a Seenzhin v1 catalog in tomans is refused, not shown wrongly.
+for (const bad of [{ ...file, v: 2 }, { ...file, app: 'hesab' }, { ...file, kind: 'request' }, { ...file, currency: 'USD' }, { items: 3 }, null, 'x']) {
+  assert.equal(catalogOk(bad), false); assert.equal(normalize(bad).length, 0);
+}
 
 // Malformed rows are dropped, duplicates removed, unknown availability → made to order.
 const items = normalize([
@@ -72,6 +83,11 @@ assert.deepEqual(Object.keys(r.errors).sort(), ['idea', 'kind', 'name', 'phone']
 r = customRequest({ name: 'سارا', kind: 'جواهر', idea: 'گوشوارهٔ نقره با نقش انار', phone: '۰۹۱۲ ۱۲۳ ۴۵۶۷', metal: 'نقره', budget: 'تا ۲۰ میلیون' });
 assert.equal(r.ok, true);
 assert.ok(r.message.includes('تماس: 09121234567') && r.message.includes('فلز: نقره') && r.message.includes('نوع: جواهر'));
+// …and the request record for the app (contract §2) is ready for when the server exists.
+assert.equal(r.request.kind, 'request'); assert.equal(r.request.v, 1); assert.equal(r.request.type, 'custom');
+assert.equal(r.request.phone, '09121234567'); assert.equal(r.request.productId, null);
+assert.ok(r.request.message.includes('طرح: گوشوارهٔ نقره با نقش انار') && !isNaN(Date.parse(r.request.createdAt)) && r.request.id);
+assert.equal(customRequest({}).request, null);
 r = customRequest({ name: 'سارا', kind: 'جواهر', idea: 'گوشوارهٔ نقره با نقش انار', insta: '@sara' });
 assert.equal(r.ok, true); assert.ok(r.message.includes('اینستاگرام: @sara'));
 assert.equal(customRequest({ name: 'x', kind: 'جواهر', idea: 'یک طرح بلند کافی', phone: '12' }).errors.phone, 'شماره درست به نظر نمی‌رسد.');
@@ -96,5 +112,6 @@ assert.equal(shopHash({}), '#/shop');
 // The sample catalog in the repo is valid and marked as sample (never real prices in the repo).
 const sample = JSON.parse(readFileSync(new URL('../site/data/catalog.json', import.meta.url)));
 assert.equal(sample.sample, true);
+assert.ok(catalogOk(sample) && sample.app === 'seenzhin' && sample.v === 1);
 assert.equal(normalize(sample).length, sample.items.length);
 console.log('site core ok');

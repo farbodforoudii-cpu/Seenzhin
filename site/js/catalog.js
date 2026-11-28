@@ -39,9 +39,24 @@ export const CATS = [
 export const catSlug = name => (CATS.find(c => c.name === name) || {}).slug || name;
 export const catName = slug => (CATS.find(c => c.slug === slug) || {}).name || slug;
 
+// Contract with the app: docs/SITE-CONTRACT.md. Catalog file v1 = { app: 'seenzhin', kind: 'catalog', v: 1, at, currency: 'IRT', items }.
+export const CATALOG_V = 1;
+// Is this a catalog this site understands? Newer major versions are refused rather than shown wrongly.
+export function catalogOk(raw) {
+  if (Array.isArray(raw)) return true;
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.items)) return false;
+  if (raw.app && raw.app !== 'seenzhin') return false;
+  if (raw.kind && raw.kind !== 'catalog') return false;
+  if (raw.v != null && Number(raw.v) > CATALOG_V) return false;
+  if (raw.currency && raw.currency !== 'IRT') return false;
+  return true;
+}
+// A photo is a URL string, or { id, url } (live server) or { id, data } (exported file with data URLs).
+const photoSrc = ph => typeof ph === 'string' ? ph : (ph && typeof ph === 'object' ? (ph.url || ph.data || '') : '');
+
 // Accepts the raw JSON the app publishes and returns a clean list. Anything malformed is dropped, never shown half.
 export function normalize(raw) {
-  const items = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.items) ? raw.items : []);
+  const items = !catalogOk(raw) ? [] : Array.isArray(raw) ? raw : raw.items;
   const seen = new Set();
   return items.filter(p => p && p.id != null && String(p.title || '').trim() && !seen.has(String(p.id)) && seen.add(String(p.id)))
     .map((p, i) => ({
@@ -54,7 +69,7 @@ export function normalize(raw) {
       weight: Number(p.weight) > 0 ? Number(p.weight) : null,
       price: Number(p.price) > 0 ? Math.round(Number(p.price)) : null,
       availability: p.availability === 'available' ? 'available' : 'made-to-order',
-      photos: (Array.isArray(p.photos) ? p.photos : []).filter(u => typeof u === 'string' && u),
+      photos: (Array.isArray(p.photos) ? p.photos : []).map(photoSrc).filter(u => typeof u === 'string' && /^(https?:|data:image\/|\.?\/?[\w-])/.test(u) && !/^javascript:/i.test(u)),
       order: i,
     }));
 }
@@ -121,6 +136,13 @@ export function customRequest(f) {
   if (phone && !/^(\+|00)?\d{8,15}$/.test(phone)) errors.phone = 'شماره درست به نظر نمی‌رسد.';
   if (!phone && !String(f.insta || '').trim()) errors.phone = 'یک راه تماس (شماره یا اینستاگرام) لازم است.';
   const ok = !Object.keys(errors).length;
+  // The request record the site will send to the app once the server exists (contract §2, type «custom»).
+  const request = ok ? {
+    kind: 'request', v: 1, id: f.id || newId(), type: 'custom', productId: f.productId || null,
+    name: String(f.name).trim(), phone, insta: String(f.insta || '').trim().replace(/^@/, ''),
+    message: [`نوع: ${f.kind}`, f.metal && `فلز: ${f.metal}`, f.when && `زمان: ${String(f.when).trim()}`, `طرح: ${String(f.idea).trim()}`].filter(Boolean).join('\n'),
+    budget: f.budget || '', createdAt: (f.now || new Date()).toISOString(),
+  } : null;
   const message = ok ? [
     'سلام، درخواست سفارش اختصاصی دارم.',
     `نوع: ${f.kind}`,
@@ -132,8 +154,10 @@ export function customRequest(f) {
     phone ? `تماس: ${phone}` : '',
     f.insta ? `اینستاگرام: @${String(f.insta).trim().replace(/^@/, '')}` : '',
   ].filter(Boolean).join('\n') : '';
-  return { ok, errors, message };
+  return { ok, errors, message, request };
 }
+
+export const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 // Contact links from site.json. WhatsApp takes an Iranian mobile (09…) or an international number.
 export function waLink(number, text) {
@@ -154,7 +178,7 @@ export function parseRoute(hash) {
   const query = Object.fromEntries(new URLSearchParams(qs));
   const page = parts[0] || 'home';
   if (page === 'p' && parts[1]) return { page: 'product', id: parts[1], query };
-  if (['home', 'shop', 'custom', 'saved', 'about', 'care', 'contact'].includes(page)) return { page, query };
+  if (['home', 'shop', 'custom', 'saved', 'about', 'care', 'contact', 'preview'].includes(page)) return { page, query };
   return { page: 'notfound', query };
 }
 export function shopHash(q) {

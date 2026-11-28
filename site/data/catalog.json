@@ -1,8 +1,11 @@
 {
- "version": 1,
+ "app": "seenzhin",
+ "kind": "catalog",
+ "v": 1,
+ "at": "2026-11-28T09:00:00.000Z",
+ "currency": "IRT",
  "sample": true,
  "note": "Sample data for building the site. Not real products or prices.",
- "updated": "2026-11-28",
  "items": [
   {
    "id": "s01",
@@ -15,9 +18,18 @@
    "price": 14500000,
    "availability": "available",
    "photos": [
-    "img/sample/s01-1.svg",
-    "img/sample/s01-2.svg",
-    "img/sample/s01-3.svg"
+    {
+     "id": "s01-1",
+     "url": "img/sample/s01-1.svg"
+    },
+    {
+     "id": "s01-2",
+     "url": "img/sample/s01-2.svg"
+    },
+    {
+     "id": "s01-3",
+     "url": "img/sample/s01-3.svg"
+    }
    ]
   },
   {
@@ -31,9 +43,18 @@
    "price": 18200000,
    "availability": "made-to-order",
    "photos": [
-    "img/sample/s02-1.svg",
-    "img/sample/s02-2.svg",
-    "img/sample/s02-3.svg"
+    {
+     "id": "s02-1",
+     "url": "img/sample/s02-1.svg"
+    },
+    {
+     "id": "s02-2",
+     "url": "img/sample/s02-2.svg"
+    },
+    {
+     "id": "s02-3",
+     "url": "img/sample/s02-3.svg"
+    }
    ]
   },
   {
@@ -47,7 +68,10 @@
    "price": 11800000,
    "availability": "available",
    "photos": [
-    "img/sample/s03-1.svg"
+    {
+     "id": "s03-1",
+     "url": "img/sample/s03-1.svg"
+    }
    ]
   },
   {
@@ -61,9 +85,18 @@
    "price": 12600000,
    "availability": "available",
    "photos": [
-    "img/sample/s04-1.svg",
-    "img/sample/s04-2.svg",
-    "img/sample/s04-3.svg"
+    {
+     "id": "s04-1",
+     "url": "img/sample/s04-1.svg"
+    },
+    {
+     "id": "s04-2",
+     "url": "img/sample/s04-2.svg"
+    },
+    {
+     "id": "s04-3",
+     "url": "img/sample/s04-3.svg"
+    }
    ]
   },
   {
@@ -77,9 +110,18 @@
    "price": 29500000,
    "availability": "made-to-order",
    "photos": [
-    "img/sample/s05-1.svg",
-    "img/sample/s05-2.svg",
-    "img/sample/s05-3.svg"
+    {
+     "id": "s05-1",
+     "url": "img/sample/s05-1.svg"
+    },
+    {
+     "id": "s05-2",
+     "url": "img/sample/s05-2.svg"
+    },
+    {
+     "id": "s05-3",
+     "url": "img/sample/s05-3.svg"
+    }
    ]
   },
   {
@@ -93,9 +135,18 @@
    "price": 118000000,
    "availability": "available",
    "photos": [
-    "img/sample/s06-1.svg",
-    "img/sample/s06-2.svg",
-    "img/sample/s06-3.svg"
+    {
+     "id": "s06-1",
+     "url": "img/sample/s06-1.svg"
+    },
+    {
+     "id": "s06-2",
+     "url": "img/sample/s06-2.svg"
+    },
+    {
+     "id": "s06-3",
+     "url": "img/sample/s06-3.svg"
+    }
    ]
   },
   {
@@ -109,9 +160,18 @@
    "price": 49000000,
    "availability": "made-to-order",
    "photos": [
-    "img/sample/s07-1.svg",
-    "img/sample/s07-2.svg",
-    "img/sample/s07-3.svg"
+    {
+     "id": "s07-1",
+     "url": "img/sample/s07-1.svg"
+    },
+    {
+     "id": "s07-2",
+     "url": "img/sample/s07-2.svg"
+    },
+    {
+     "id": "s07-3",
+     "url": "img/sample/s07-3.svg"
+    }
    ]
   },
   {
@@ -125,9 +185,18 @@
    "price": 16000000,
    "availability": "available",
    "photos": [
-    "img/sample/s08-1.svg",
-    "img/sample/s08-2.svg",
-    "img/sample/s08-3.svg"
+    {
+     "id": "s08-1",
+     "url": "img/sample/s08-1.svg"
+    },
+    {
+     "id": "s08-2",
+     "url": "img/sample/s08-2.svg"
+    },
+    {
+     "id": "s08-3",
+     "url": "img/sample/s08-3.svg"
+    }
    ]
   }
  ]

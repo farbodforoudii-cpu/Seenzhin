@@ -86,6 +86,27 @@ const DEVICES = [
     await pg.goto(BASE + '#/p/nope'); await pg.waitForTimeout(150);
     ok((await pg.locator('main h1').innerText()) === 'پیدا نشد', `${tag}: missing product → not found page`);
 
+    // preview with a catalog exported from the app (contract v1, photo as data URL), memory only
+    if (name === 'laptop' && scheme === 'light') {
+      const px = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const file = { app: 'seenzhin', kind: 'catalog', v: 1, at: new Date().toISOString(), currency: 'IRT', items: [
+        { id: 'real1', title: 'اثر از اپ', desc: '', category: 'جواهرات', type: 'گوشواره', material: 'نقره', weight: 8, price: 12000000, availability: 'available', photos: [{ id: 'ph', data: px }] },
+        { id: 'real2', title: 'بدون قیمت', desc: '', category: 'تابلوی نقره', type: 'بزرگ', material: 'نقره', weight: null, price: null, availability: 'made-to-order', photos: [] }] };
+      await pg.goto(BASE + '#/preview'); await pg.waitForSelector('[data-previewfile]', { state: 'attached' });
+      await pg.setInputFiles('[data-previewfile]', { name: 'seenzhin-catalog-2026-11-28.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(file)) });
+      await pg.waitForSelector('.ok-note');
+      await pg.click('a[href="#/shop"].btn'); await pg.waitForSelector('.card');
+      ok(await pg.locator('.card').count() === 2 && await pg.isVisible('.preview-bar'), `${tag} preview: 2 products from the app file, banner shown`);
+      ok((await pg.locator('.card:has-text("بدون قیمت") .price').innerText()) === 'تماس بگیرید', `${tag} preview: no price → «تماس بگیرید»`);
+      await shot('preview');
+      await pg.goto(BASE + '#/preview');
+      await pg.setInputFiles('[data-previewfile]', { name: 'x.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...file, v: 2 })) });
+      await pg.waitForTimeout(200);
+      ok(await pg.locator('#toast.show').count() === 1, `${tag} preview: newer catalog version refused`);
+      await pg.reload(); await pg.goto(BASE + '#/shop'); await pg.waitForSelector('.card');
+      ok(await pg.locator('.card').count() === 8, `${tag} preview: reload returns to sample`);
+    }
+
     // catalog failure → friendly message with retry
     const ctx2 = await b.newContext({ ...dev, colorScheme: scheme });
     const pg2 = await ctx2.newPage();

@@ -1,11 +1,11 @@
 // Seenzhin website: router, pages and events. Rules live in catalog.js (tested in Node).
 import {
-  normalize, filterItems, categoriesOf, related, specs, orderMessage, customRequest, waLink, igLink, tgLink,
+  normalize, catalogOk, filterItems, categoriesOf, related, specs, orderMessage, customRequest, waLink, igLink, tgLink,
   parseRoute, shopHash, shortPrice, toman, esc, faDigits, AVAIL, catName,
   CUSTOM_KINDS, CUSTOM_METALS, CUSTOM_BUDGETS,
 } from './catalog.js';
 
-const S = { items: [], site: {}, loaded: false, failed: false, saved: new Set(), form: {} };
+const S = { items: [], site: {}, loaded: false, failed: false, saved: new Set(), form: {}, preview: '' };
 const $ = (sel, root = document) => root.querySelector(sel);
 const app = $('#app');
 
@@ -31,7 +31,8 @@ async function load() {
       fetch('data/catalog.json', { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }),
       fetch('data/site.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
     ]);
-    S.items = normalize(cat);
+    if (!catalogOk(cat)) throw new Error('version');
+    if (!S.preview) S.items = normalize(cat);
     S.site = site || {};
   } catch (e) {
     S.failed = true;
@@ -54,7 +55,7 @@ function card(p) {
       <span class="card-body">
         <span class="card-title">${esc(p.title)}</span>
         <span class="card-meta">${esc([p.type || p.category, p.material].filter(Boolean).join('، '))}</span>
-        <span class="card-foot"><span class="price">${p.price ? shortPrice(p.price) : 'قیمت با پیام'}</span>
+        <span class="card-foot"><span class="price">${p.price ? shortPrice(p.price) : 'تماس بگیرید'}</span>
           <span class="badge ${p.availability}">${AVAIL[p.availability].name}</span></span>
       </span>
     </a>
@@ -130,7 +131,7 @@ function product(id) {
       </div>
       <div class="info">
         <h1>${esc(p.title)}</h1>
-        <p class="price big">${p.price ? toman(p.price) : 'قیمت با پیام'}</p>
+        <p class="price big">${p.price ? toman(p.price) : 'تماس بگیرید'}</p>
         <p class="badge ${p.availability}">${AVAIL[p.availability].name}<span>${AVAIL[p.availability].hint}</span></p>
         ${p.desc ? `<p class="desc">${esc(p.desc)}</p>` : ''}
         <dl class="specs">${specs(p).map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
@@ -200,11 +201,20 @@ const contact = () => textPage('تماس', `<p>برای سفارش، پرسش د
   <h2>سفارش از خارج از ایران</h2>
   <p>ارسال به خارج از ایران با هماهنگی انجام می‌شود. پیش از هر پرداختی، در گفتگو هزینهٔ ارسال و روش پرداخت را اعلام می‌کنیم.</p>`);
 
+// Preview with a real catalog exported from the app (Settings → «خروجی کاتالوگ سایت»).
+// The file stays in this tab's memory only: nothing is uploaded or saved, a reload returns to the sample.
+function preview() {
+  return textPage('پیش‌نمایش با کاتالوگ اپ', `<p>فایل «خروجی کاتالوگ سایت» را از اپ سینژین انتخاب کنید تا سایت با محصولات واقعی دیده شود.</p>
+    <p class="muted">فایل فقط در همین صفحه خوانده می‌شود؛ جایی فرستاده یا ذخیره نمی‌شود و با بارگذاری دوباره، سایت به دادهٔ نمونه برمی‌گردد.</p>
+    <label class="btn primary file">انتخاب فایل کاتالوگ<input type="file" accept="application/json,.json" data-previewfile hidden></label>
+    ${S.preview ? `<p class="ok-note" role="status">${esc(S.preview)}</p><p><a class="btn" href="#/shop">دیدن آثار</a></p>` : ''}`);
+}
+
 function empty(text, extra = '') { return `<div class="empty">${icon('sun')}<p>${text}</p>${extra}</div>`; }
 function notfound(text = 'این صفحه پیدا نشد.') { return `<div class="empty">${icon('sun')}<h1>پیدا نشد</h1><p>${esc(text)}</p><a class="btn" href="#/shop">دیدن آثار</a></div>`; }
 
 // ---------- render + meta ----------
-const TITLES = { home: '', shop: 'آثار', custom: 'سفارش اختصاصی', saved: 'ذخیره‌ها', about: 'دربارهٔ ما', care: 'راهنمای نگهداری', contact: 'تماس', notfound: 'پیدا نشد' };
+const TITLES = { home: '', shop: 'آثار', custom: 'سفارش اختصاصی', saved: 'ذخیره‌ها', about: 'دربارهٔ ما', care: 'راهنمای نگهداری', contact: 'تماس', preview: 'پیش‌نمایش', notfound: 'پیدا نشد' };
 let lastPage = '';
 function render() {
   const r = parseRoute(location.hash);
@@ -220,12 +230,14 @@ function render() {
   else if (r.page === 'about') html = about();
   else if (r.page === 'care') html = care();
   else if (r.page === 'contact') html = contact();
+  else if (r.page === 'preview') html = preview();
   else html = notfound();
   if (r.page !== 'product') setProductMeta(null);
-  app.innerHTML = html;
+  app.innerHTML = (S.preview && r.page !== 'preview' ? `<p class="preview-bar" role="status">پیش‌نمایش با کاتالوگ اپ؛ فقط روی همین صفحه</p>` : '') + html;
   document.title = title ? `${title} | سینژین` : 'سینژین | جواهر و آثار دست‌ساز نقره';
   document.querySelectorAll('[data-nav]').forEach(a => a.toggleAttribute('aria-current', a.dataset.nav === r.page || (a.dataset.nav === 'shop' && r.page === 'product')));
-  $('#savedCount').textContent = S.saved.size ? faDigits(S.saved.size) : '';
+  const nSaved = S.items.filter(p => S.saved.has(p.id)).length;
+  $('#savedCount').textContent = nSaved ? faDigits(nSaved) : '';
   const key = r.page + (r.id || '') + (r.page === 'shop' ? JSON.stringify({ ...r.query, q: '' }) : '');
   if (key !== lastPage) { if (r.page !== 'shop' || !lastPage.startsWith('shop')) window.scrollTo(0, 0); lastPage = key; }
   bindGallery();
@@ -320,7 +332,17 @@ document.addEventListener('submit', e => {
     if (first) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 });
-document.addEventListener('change', e => { const f = e.target.closest('[data-shopform]'); if (f && e.target.name === 'sort') applyShopForm(f); });
+document.addEventListener('change', async e => {
+  if (e.target.matches('[data-previewfile]')) {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    try {
+      const raw = JSON.parse(await file.text());
+      if (!catalogOk(raw)) throw new Error('version');
+      const list = normalize(raw);
+      S.items = list; S.preview = `${faDigits(list.length)} محصول از فایل ${file.name} نشان داده می‌شود.`;
+    } catch { S.preview = ''; toast('این فایل کاتالوگ سینژین نیست یا نسخه‌اش جدیدتر از سایت است.'); }
+    render(); return;
+  } const f = e.target.closest('[data-shopform]'); if (f && e.target.name === 'sort') applyShopForm(f); });
 let qT;
 document.addEventListener('input', e => {
   const f = e.target.closest('[data-shopform]'); if (f && e.target.name === 'q') { clearTimeout(qT); qT = setTimeout(() => applyShopForm(f, true), 250); }

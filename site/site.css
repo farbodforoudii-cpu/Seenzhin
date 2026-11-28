@@ -210,3 +210,7 @@ legend { font-weight: 700; margin-bottom: 8px; }
 .toast.show { opacity: 1; transform: none; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+
+.preview-bar { margin: -8px 0 16px; padding: 8px 14px; border-radius: 10px; background: var(--sand); font-size: .88rem; text-align: center; }
+.ok-note { color: var(--ok); font-weight: 600; }
+.btn.file { position: relative; }
