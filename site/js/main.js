@@ -160,7 +160,7 @@ function product(id) {
         <details class="more"><summary><span>جزئیات، ارسال و نگهداری</span></summary>
           <dl class="specs">${specs(p).map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
           <p>قیمت با نرخ روز ${p.material ? esc(p.material) : 'فلز'} تنظیم می‌شود و هنگام سفارش تأیید می‌شود. هزینهٔ ارسال جداست.</p>
-          <p>${esc(S.site.shipping || 'ارسال بیمه‌شده به سراسر ایران. زمان و هزینهٔ ارسال در پیام اعلام می‌شود.')}</p>
+          <p>${esc(S.site.shipping || 'ارسال به سراسر ایران. زمان و هزینهٔ ارسال در پیام اعلام می‌شود.')}</p>
           <p><a class="link" href="#/care">راهنمای نگهداری</a></p></details>
       </div>
     </div>

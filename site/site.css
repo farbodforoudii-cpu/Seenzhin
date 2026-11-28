@@ -13,14 +13,16 @@
   --ink: #232825;        /* brand charcoal, deepened for reading */
   --muted: #5F6762;
   --line: #CCD6CF;
-  --gold: #8C6E3C;       /* text-safe gold */
+  --gold: #7A5F31;       /* text-safe gold (4.9:1 on paper) */
   --gold-wire: #B7975B;  /* decorative only */
   --order: #8A5F2A;
   --gut: clamp(16px, 4vw, 40px);
   --maxw: 1280px;
   --r: 6px;              /* one radius for images and wells */
   --tap: 44px;
-  --ease: cubic-bezier(.2, .7, .1, 1);
+  --ease: cubic-bezier(.23, 1, .32, 1);        /* ease-out: enter, press (Emil Kowalski) */
+  --ease-io: cubic-bezier(.77, 0, .175, 1);    /* on-screen movement */
+  --ease-drawer: cubic-bezier(.32, .72, 0, 1); /* menu, bars */
 }
 @media (prefers-color-scheme: dark) {
   :root { --paper: #161A18; --well: #212724; --sand: #2B2925; --ink: #E7ECE8; --muted: #A2ABA5; --line: #2F3632;
@@ -61,7 +63,7 @@ main, .top-in, .foot-in { width: 100%; max-width: var(--maxw); margin-inline: au
   background: var(--gold); color: var(--paper); font-size: 11px; line-height: 17px; text-align: center; font-weight: 700; }
 .nav { display: flex; gap: 28px; margin-inline-end: 20px; }
 .nav a { position: relative; text-decoration: none; min-height: var(--tap); display: inline-flex; align-items: center; color: var(--muted); transition: color .2s; }
-.nav a:hover, .nav a[aria-current] { color: var(--ink); }
+.nav a[aria-current] { color: var(--ink); }
 .nav a::after { content: ''; position: absolute; inset-inline: 0; bottom: 8px; height: 1px; background: var(--gold); transform: scaleX(0); transition: transform .3s var(--ease); }
 .nav a[aria-current]::after { transform: scaleX(1); }
 .only-phone { display: none; }
@@ -69,7 +71,8 @@ main, .top-in, .foot-in { width: 100%; max-width: var(--maxw); margin-inline: au
   .only-phone { display: inline-grid; margin-inline-start: -10px; }
   .nav { position: fixed; inset: calc(64px + env(safe-area-inset-top)) 0 auto 0; flex-direction: column; gap: 0; margin: 0;
     background: var(--paper); border-bottom: 1px solid var(--line); padding: 4px var(--gut) 20px;
-    opacity: 0; visibility: hidden; transform: translateY(-6px); transition: opacity .2s var(--ease), transform .25s var(--ease), visibility .2s; }
+    opacity: 0; visibility: hidden; transform: translateY(-6px); transition: opacity .16s ease, transform .2s var(--ease-drawer), visibility .16s; }
+  .menu-open .nav { transition-duration: .24s, .28s, .24s; }
   .nav a { font-size: 1.35rem; font-weight: 300; color: var(--ink); min-height: 56px; border-bottom: 1px solid var(--line); }
   .nav a:last-child { border-bottom: 0; }
   .nav a::after { display: none; }
@@ -85,26 +88,24 @@ main > .lead { margin-bottom: 8px; }
 .section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 24px; }
 .catlinks { display: flex; flex-wrap: wrap; gap: 0 20px; }
 .catlinks a { color: var(--muted); text-decoration: none; min-height: var(--tap); display: inline-flex; align-items: center; transition: color .2s; }
-.catlinks a:hover { color: var(--ink); }
 .lead { font-size: clamp(1.02rem, .95rem + .3vw, 1.15rem); color: var(--muted); max-width: 46ch; }
 .crumbs { font-size: .85rem; color: var(--muted); margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 6px; }
-.crumbs a { text-decoration: none; } .crumbs a:hover { color: var(--ink); }
+.crumbs a { text-decoration: none; }
 .crumbs .sep { opacity: .5; }
 
 /* ---------- buttons ---------- */
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; margin-top: 32px; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 0 28px; border-radius: 999px;
   border: 1px solid var(--ink); background: transparent; text-decoration: none; cursor: pointer; font-weight: 500;
-  transition: background .25s var(--ease), color .25s var(--ease), transform .15s var(--ease); -webkit-tap-highlight-color: transparent; }
+  transition: background-color .2s ease, color .2s ease, transform .16s var(--ease); -webkit-tap-highlight-color: transparent; }
 .btn:active { transform: scale(.97); }
 .btn.primary { background: var(--ink); color: var(--paper); }
 .btn.ghost { border-color: var(--line); min-height: var(--tap); padding: 0 18px; }
 .btn.ghost.on { color: var(--gold); border-color: var(--gold); }
 .btn.wide { width: 100%; }
-@media (hover: hover) { .btn:hover { background: var(--ink); color: var(--paper); } .btn.primary:hover { background: transparent; color: var(--ink); } }
+@media (hover: hover) and (pointer: fine) { .btn:hover { background: var(--ink); color: var(--paper); } .btn.primary:hover { background: transparent; color: var(--ink); } }
 .link { display: inline-flex; align-items: center; min-height: var(--tap); text-decoration: none; }
 .link span, .link { background: linear-gradient(var(--gold), var(--gold)) no-repeat 100% 78% / 100% 1px; }
-.link:hover { color: var(--gold); }
 .more-link { margin-top: 48px; display: flex; justify-content: center; }
 
 /* ---------- hero: text on the start edge, the logo on the end edge ---------- */
@@ -138,9 +139,9 @@ main > .lead { margin-bottom: 8px; }
 .card { position: relative; }
 .card-link { display: block; text-decoration: none; }
 .card-media { position: relative; display: block; aspect-ratio: 4 / 5; border-radius: var(--r); overflow: hidden; background: var(--well); }
-.card-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .5s var(--ease), transform 1.2s var(--ease); }
+.card-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .4s ease, transform .6s var(--ease); }
 .card-img.alt { opacity: 0; }
-@media (hover: hover) { .card:hover .card-img.alt { opacity: 1; } .card:hover .card-img { transform: scale(1.04); } }
+@media (hover: hover) and (pointer: fine) { .card:hover .card-img.alt { opacity: 1; } .card:hover .card-img { transform: scale(1.04); } }
 .tag { position: absolute; bottom: 10px; inset-inline-start: 10px; font-size: .75rem; line-height: 1.9; padding: 0 10px; border-radius: 999px;
   background: color-mix(in srgb, var(--paper) 88%, transparent); color: var(--order); }
 .card-body { display: grid; padding-top: 12px; }
@@ -166,8 +167,7 @@ main > .lead { margin-bottom: 8px; }
 .select select { max-width: 9.5em; min-height: 48px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: transparent; font-size: 16px; }
 .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * var(--gut)); padding: 2px var(--gut) 6px; }
 .chips::-webkit-scrollbar { display: none; }
-.chip { flex: none; display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; white-space: nowrap; color: var(--muted); transition: color .2s, border-color .2s; }
-.chip:hover { color: var(--ink); }
+.chip { flex: none; display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); text-decoration: none; white-space: nowrap; color: var(--muted); transition: color .2s, border-color .2s; }
 .chip.on { color: var(--paper); background: var(--ink); border-color: var(--ink); }
 .chips-sep { flex: none; width: 1px; background: var(--line); margin: 8px 4px; }
 .count { color: var(--muted); font-size: .88rem; margin: 10px 0 20px; }
@@ -228,7 +228,6 @@ legend { font-weight: 500; margin-bottom: 12px; padding: 0; }
 .radio { position: relative; }
 .radio input { position: absolute; opacity: 0; pointer-events: none; }
 .radio span { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 18px; border-radius: 999px; border: 1px solid var(--line); cursor: pointer; transition: border-color .2s, background .2s, color .2s; }
-.radio span:hover { border-color: var(--ink); }
 .radio input:checked + span { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .radio input:focus-visible + span { outline: 2px solid var(--gold); outline-offset: 2px; }
 .field { display: grid; gap: 8px; min-width: 0; align-content: start; }
@@ -269,16 +268,23 @@ legend { font-weight: 500; margin-bottom: 12px; padding: 0; }
 .foot-brand p { color: var(--muted); font-size: .85rem; }
 .foot nav { display: flex; flex-wrap: wrap; gap: 0 22px; }
 .foot nav a { text-decoration: none; color: var(--muted); min-height: var(--tap); display: inline-flex; align-items: center; font-size: .92rem; }
-.foot nav a:hover { color: var(--ink); }
 @media (min-width: 760px) { .foot-in { grid-template-columns: 1fr auto; align-items: center; } }
 
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); width: max-content; max-width: calc(100% - 32px); padding: 12px 22px; border-radius: 999px;
   background: var(--ink); color: var(--paper); text-align: center; font-size: .92rem; opacity: 0; transform: translate(-50%, 10px); pointer-events: none; transition: opacity .25s, transform .3s var(--ease); z-index: 40; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* Reduced motion: no movement, keep gentle fades that explain changes (Emil Kowalski). */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  *, *::before, *::after { scroll-behavior: auto !important; }
+  .hero-text > *, .brandmark, .burst .mark { animation: fade .4s ease both !important; }
+  .burst::after, .loading .mark { animation: none !important; }
+  .btn:active, .chip:active, .seg a:active, .radio span:active, .thumb:active, .save:active, .icon-btn:active { transform: none; }
+  .card .card-img { transform: none !important; }
+  .nav, .toast { transform: none !important; }
 }
+@keyframes fade { from { opacity: 0; } }
+
 
 /* ---------- patterns from Farbod's samples: one named action in reach, segmented choice, details folded ---------- */
 .section-title { margin-bottom: 24px; }
@@ -287,7 +293,7 @@ legend { font-weight: 500; margin-bottom: 12px; padding: 0; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; }
 @media (max-width: 399px) { .seg a { padding: 0 12px; } .bar .select select { padding: 0 12px; } }
 .seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--well); }
-.seg a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 999px; text-decoration: none; color: var(--muted); transition: background .25s var(--ease), color .2s; }
+.seg a { display: inline-flex; align-items: center; min-height: 42px; padding: 0 16px; border-radius: 999px; text-decoration: none; color: var(--muted); transition: background .25s var(--ease), color .2s; }
 .seg a.on { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
 @media (prefers-color-scheme: dark) { .seg a.on { background: var(--line); } }
 .tools { margin-bottom: 12px; }
@@ -318,8 +324,24 @@ legend { font-weight: 500; margin-bottom: 12px; padding: 0; }
 
 /* Message ready: the logo appears with one soft ring, once. */
 .burst { position: relative; width: 84px; margin-bottom: 6px; }
-.burst .mark { width: 100%; animation: pop .7s var(--ease) both; }
+.burst .mark { width: 100%; animation: pop .45s var(--ease) both; }
 .burst::after { content: ''; position: absolute; inset: -30% -10%; border-radius: 50%; border: 1px solid var(--gold-wire); opacity: 0; animation: ring 1.1s var(--ease) .15s; }
-@keyframes pop { from { transform: scale(.6); opacity: 0; } }
+@keyframes pop { from { transform: scale(.92); opacity: 0; } }
 @keyframes ring { 0% { transform: scale(.5); opacity: .8; } 100% { transform: scale(1.4); opacity: 0; } }
 .done .actions .btn { flex: 1 1 200px; }
+
+
+/* Hover only where a real pointer exists; touch screens get press feedback instead (Emil Kowalski). */
+@media (hover: hover) and (pointer: fine) {
+  .nav a:hover { color: var(--ink); }
+  .catlinks a:hover { color: var(--ink); }
+  .link:hover { color: var(--gold); }
+  .chip:hover { color: var(--ink); }
+  .radio span:hover { border-color: var(--ink); }
+  .foot nav a:hover { color: var(--ink); }
+  .crumbs a:hover { color: var(--ink); }
+}
+
+/* Press feedback on everything tappable: a small, fast scale (100–160 ms). */
+.chip, .seg a, .radio span, .thumb, .save, .icon-btn, .cat, .catlinks a { transition-property: color, background-color, border-color, opacity, transform; transition-duration: .16s; transition-timing-function: var(--ease); }
+.chip:active, .seg a:active, .radio span:active, .thumb:active, .save:active, .icon-btn:active { transform: scale(.96); }

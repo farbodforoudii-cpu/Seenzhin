@@ -127,6 +127,12 @@ const DEVICES = [
     await pg2.goto(BASE); await pg2.waitForSelector('[data-retry]');
     ok(true, `${tag}: catalog failure shows retry`); await ctx2.close();
 
+    // Reduced motion: logo only fades, no movement; hover effects never run on touch screens.
+    const ctx3 = await b.newContext({ ...dev, colorScheme: scheme, reducedMotion: 'reduce' });
+    const pg3 = await ctx3.newPage(); await pg3.goto(BASE); await pg3.waitForSelector('.brandmark');
+    ok(await pg3.evaluate(() => getComputedStyle(document.querySelector('.brandmark')).animationName) === 'fade', `${tag}: reduced motion → logo fades only`);
+    await ctx3.close();
+
     ok(!errors.length, `${tag}: no console errors ${errors.join(' | ')}`);
     await ctx.close();
   }
