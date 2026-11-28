@@ -109,9 +109,10 @@ assert.equal(parseRoute('#/nope').page, 'notfound');
 assert.equal(shopHash({ cat: 'panel', sort: 'new', q: '' }), '#/shop?cat=panel');
 assert.equal(shopHash({}), '#/shop');
 
-// The sample catalog in the repo is valid and marked as sample (never real prices in the repo).
-const sample = JSON.parse(readFileSync(new URL('../site/data/catalog.json', import.meta.url)));
-assert.equal(sample.sample, true);
-assert.ok(catalogOk(sample) && sample.app === 'seenzhin' && sample.v === 1);
-assert.equal(normalize(sample).length, sample.items.length);
+// The catalog the site serves is valid, and holds only public fields (never cost, factors, stock counts or customers).
+const live = JSON.parse(readFileSync(new URL('../site/data/catalog.json', import.meta.url)));
+assert.ok(catalogOk(live) && live.app === 'seenzhin' && live.v === 1);
+assert.equal(normalize(live).length, live.items.length);
+const PUBLIC = ['id', 'title', 'desc', 'category', 'type', 'material', 'weight', 'price', 'availability', 'photos'];
+for (const it of live.items) for (const k of Object.keys(it)) assert.ok(PUBLIC.includes(k), `catalog field «${k}» is not public`);
 console.log('site core ok');
